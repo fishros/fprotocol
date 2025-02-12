@@ -1,5 +1,7 @@
 import csv
 import sys
+import os
+import re
 
 # 输入文件内容
 input_file_content = """"""
@@ -9,13 +11,17 @@ if len(sys.argv) != 3:
 input_file = sys.argv[1]
 output_directory = sys.argv[2]
 if output_directory=='.':
-    output_directory = input_file[:input_file.rfind('/')]
+    output_directory = os.path.dirname(input_file)
+    print(output_directory)
 file_name = sys.argv[1]
 file_name = file_name[file_name.rfind('/')+1:].split('.')[0]
 print(f"file_name: {file_name}", f"output_directory: {output_directory}")
 
-with open(input_file, 'r') as file:
+with open(input_file, 'r',encoding='utf-8') as file:
     input_file_content = ''.join([line for line in file if not line.strip().startswith('#')])
+
+# 删除注释
+input_file_content = re.sub(r'#.*', '', input_file_content)
 
 # 解析输入文件
 struct_definition_csv, csv_data = input_file_content.split('---')
@@ -37,6 +43,7 @@ h_file_content = (
 struct_maps = {}
 for row in struct_list:
     struct_name,ttype,name,len = row
+    len = len.strip()
     if struct_name not in struct_maps.keys():
         struct_maps[struct_name] = []
     struct_maps[struct_name].append((ttype,name,len))
@@ -118,7 +125,7 @@ c_file_content += f"fprotocol_get_index_info_t {file_name.lower()}_index_info = 
 
 # 保存到文件
 def save_to_file(filename, content):
-    with open(filename, 'w') as f:
+    with open(filename, 'w',encoding='utf-8') as f:
         f.write(content)
 
 save_to_file(f"{output_directory}/{file_name}Proto.h", h_file_content)
