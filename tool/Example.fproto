@@ -1,0 +1,10 @@
+# 数据结构定义部分
+#数据结构名称,包含类型，名称,数据长度
+canframe_t,uint32_t,arbitration_id,
+canframe_t,uint8_t,dlc,
+canframe_t,uint8_t,rtr,
+canframe_t,uint8_t,data,8
+---
+# 地址 , 类型    ,  变量名,  ,是否回调
+0x0001,canframe_t,can_recv_frame,1
+0x0002,canframe_t,can_send_frame,1
