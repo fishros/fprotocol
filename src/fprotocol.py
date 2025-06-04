@@ -1,9 +1,106 @@
 import logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.WARN,
     format='%(levelname)s:%(filename)s:%(funcName)s:%(lineno)d->%(message)s',
 )
 logger = logging.getLogger(__name__)
+
+
+import struct
+
+class DynamicStruct:
+    def __init__(self, field_defs):
+        """
+        field_defs: list of tuples (field_name, format_char)
+        Example: [("id", "H"), ("payload", "1024s")]
+        """
+        self.fields = field_defs
+        self.format = ''.join(fmt for _, fmt,_ in field_defs)
+        self.size = struct.calcsize(self.format)
+        self.values = {name: default_value for name, _,default_value in field_defs}
+        self.callback = None
+
+
+    def parse(self, data: bytes):
+        index = 0
+        next_array_size = 0
+        for field in self.fields:
+            field_name, fmt,_ = field
+            field_size = struct.calcsize(fmt)
+            # parse current data
+            # print(field,data)
+            if field_name.startswith("_"):
+                self.values[field_name] = struct.unpack(fmt, data[index:index+field_size])[0]
+                next_array_size = self.values[field_name]
+                index+= field_size
+            else:
+                if next_array_size:
+                    fmt_without_num = fmt[-1]  # Get the format type (like 's', 'H', etc.)
+                    dynamic_fmt = f"{next_array_size}{fmt_without_num}"
+                    self.values[field_name] = struct.unpack(dynamic_fmt, data[index:index+next_array_size])[0]
+                    index+= next_array_size
+                    next_array_size = 0
+                else:
+                    self.values[field_name] = struct.unpack(fmt, data[index:index+field_size])[0]
+                    index+= field_size
+        
+    def to_bytes(self) -> bytes:
+        packed = bytearray()
+        next_array_size = 0
+        for field_name, fmt,_ in self.fields:
+            val = self.values.get(field_name)
+            
+            if field_name.startswith("_"):
+                # 普通字段，打包并记录大小供下个字段使用
+                # print("field_name",field_name,fmt,val)
+                packed += struct.pack(fmt, val)
+                next_array_size = val
+            else:
+                if next_array_size:
+                    # 使用前面的字段长度生成动态格式
+                    fmt_type = fmt[-1]
+                    dynamic_fmt = f"{next_array_size}{fmt_type}"
+                    if fmt_type == "s":
+                        if isinstance(val, str):
+                            val = val.encode()
+                        val = val.ljust(next_array_size, b'\x00')
+                    packed += struct.pack(dynamic_fmt, val)
+                    next_array_size = 0
+                else:
+                    # 非变长字段，正常处理
+                    if fmt.endswith("s") and isinstance(val, str):
+                        val = val.encode()
+                        val = val.ljust(int(fmt[:-1]), b'\x00')
+                    packed += struct.pack(fmt, val)
+        return bytes(packed)
+
+
+    def __getattr__(self, name):
+        return self.values[name]
+
+    def __setattr__(self, name, value):
+        if name in ("fields", "format", "size", "values"):
+            super().__setattr__(name, value)
+        else:
+            self.values[name] = value
+
+    def __str__(self):
+        field_strs = []
+        for field_name, _, _ in self.fields:
+            value = self.values.get(field_name)
+            field_strs.append(f"{field_name}={value}")
+        return f"DynamicStruct({', '.join(field_strs)})"
+    
+    def to_json(self):
+        json_data = {}
+        for field_name, _, _ in self.fields:
+            value = self.values.get(field_name)
+            # Convert bytes to hex string if value is bytes
+            if isinstance(value, bytes):
+                value = value.hex()
+            json_data[field_name] = value
+        return json_data
+
 
 class CircularBuffer:
     def __init__(self, size):
@@ -14,6 +111,7 @@ class CircularBuffer:
         self.count = 0
 
     def put(self, data):
+        logger.debug(f"Buffer size: {self.csize}, Current count: {self.count}, Data length: {len(data)}")
         if len(data) > self.csize - self.count:
             return -1  # Not enough space in buffer
         for byte in data:
@@ -82,7 +180,8 @@ class FProtocolType():
     SERVICE_RESPONSE_READ = 0x04
     SERVICE_RESPONSE_ERROR = 0x05  # Data 2 bytes -> Error code
     TRANSPORT_DATA = 0x06
-    HEART = 0x07
+    HEART_PING = 0x07
+    HEART_PONG = 0x08
     MAX = 0x08
     
 class FProtocol:
@@ -94,7 +193,7 @@ class FProtocol:
         self.host_node_proto = None
         self.read_callback = read_callback
         self.write_callback = write_callback
-        self.rxbuff = CircularBuffer(1024)
+        self.rxbuff = CircularBuffer(2048)
         self.frame = {
             'recv_size': 0,
             'data': [],
@@ -144,22 +243,26 @@ class FProtocol:
             header = self.parse_header(self.frame['data'][4:11])
             self.frame['header']  = header
             logger.debug(f"header={header}")
-
             if header.node == self.host_node:
                 logger.debug(f"Recv data from host node {header.node}")
             elif header.node in self.slave_nodes.keys():
-                fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
-                self.frame['fdata'] = fdata
-                if header.type == FProtocolType.SERVICE_RESPONSE_ERROR:
-                    self.frame['data_size'] = self.frame['header'].data_size  # 2
-                elif header.type == FProtocolType.SERVICE_REQUEST_WRITE:
-                    self.frame['data_size'] = self.frame['header'].data_size # 0
-                elif header.type == FProtocolType.SERVICE_RESPONSE_READ:
-                    self.frame['data_size'] = self.frame['header'].data_size #self.frame['fdata'].csize
-                elif header.type == FProtocolType.TRANSPORT_DATA:
-                    self.frame['data_size'] = self.frame['header'].data_size #self.frame['fdata'].csize
+                if header.type == FProtocolType.HEART_PING:
+                    self.frame['data_size'] = 0
+                    self.frame['fdata'] = None
+                    logger.debug(f"Recv data from node {self.frame['header'].node} data_size={self.frame['header'].data_size}")
                 else:
-                    self.frame['recv_size'] = 0 # 重新接收
+                    fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
+                    self.frame['fdata'] = fdata
+                    if header.type == FProtocolType.SERVICE_RESPONSE_ERROR:
+                        self.frame['data_size'] = self.frame['header'].data_size  # 2
+                    elif header.type == FProtocolType.SERVICE_REQUEST_WRITE:
+                        self.frame['data_size'] = self.frame['header'].data_size # 0
+                    elif header.type == FProtocolType.SERVICE_RESPONSE_READ:
+                        self.frame['data_size'] = self.frame['header'].data_size #self.frame['fdata'].csize
+                    elif header.type == FProtocolType.TRANSPORT_DATA:
+                        self.frame['data_size'] = self.frame['header'].data_size #self.frame['fdata'].csize
+                    else:
+                        self.frame['recv_size'] = 0 # 重新接收
                 # print(self.frame['recv_size'],self.frame['data_size'])
             else:
                 self.frame['recv_size'] = 0
@@ -177,7 +280,7 @@ class FProtocol:
             checksum_data = self.rxbuff.get(2) # checksum
             if checksum_data == -1:
                 return
-            print("self.frame['recv_size']",self.frame['recv_size'],self.frame['data'],checksum_data)
+            # print("self.frame['recv_size']",self.frame['recv_size'],self.frame['data'],checksum_data)
             calculated_checksum = self.checksum16(self.frame['data'])
             received_checksum = checksum_data[0] << 8 | checksum_data[1]
             if calculated_checksum == received_checksum:
@@ -195,11 +298,21 @@ class FProtocol:
     def process_frame(self,frame):
         header = frame['header']
         if header.node in self.slave_nodes.keys():
-            if header.type == FProtocolType.SERVICE_RESPONSE_READ or header.type == FProtocolType.TRANSPORT_DATA:
+            if header.type == FProtocolType.HEART_PING:
+                self.fprotocol_write(header.node,FProtocolType.HEART_PONG,0,[])
+            elif header.type == FProtocolType.SERVICE_RESPONSE_READ or header.type == FProtocolType.TRANSPORT_DATA:
+                # self.fprotocol_unpack_data(frame,bytes(frame['data'][11:]))
                 frame['fdata'].parse(bytes(frame['data'][11:]))
-            if frame['fdata'].callback:
+
+            if frame['fdata'] and frame['fdata'].callback:
                 frame['fdata'].callback(header.type,frame['fdata'],frame['error_code'])
 
+
+    # def fprotocol_unpack_data(self,frame,data):
+    #     fdata = frame['fdata']
+    #     print(fdata.cstruct,fdata.csize,data) # H12sH12s 28 b'\x04\x00\x01\x02\x03\x04\x04\x00\x00\x00\x00\x00' 
+    #     # TODO: 根据fdata.cstruct解析数据，遇到字符根据对应长度直接分割解析，遇到数字的要看前一个H的大小来解析
+    #     return
 
     def fprotocol_write(self, node, type, index, data, data_size=0):
         frame = []

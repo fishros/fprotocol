@@ -3,6 +3,63 @@ import sys
 import os
 import re
 
+
+
+
+def gen_field_enum_type(ttype):
+    mapping = {
+        'uint8_t': 'TYPE_UINT8',
+        'uint16_t': 'TYPE_UINT16',
+        'uint32_t': 'TYPE_UINT32',
+        'int8_t': 'TYPE_INT8',
+        'int16_t': 'TYPE_INT16',
+        'int32_t': 'TYPE_INT32',
+        'float': 'TYPE_FLOAT',
+    }
+    return mapping.get(ttype, 'TYPE_STRUCT')  # 默认用嵌套处理
+
+def generate_struct_descriptor(struct_name, fields):
+    field_defs = []
+    filed_count  = 0
+    for idx, (ttype, name, length, size_field) in enumerate(fields):
+        filed_count += 1
+        enum_type = gen_field_enum_type(ttype)
+        offset = f"offsetof({struct_name}, {name})"
+        size_field_str = size_field if size_field is not None else -1
+        array_len = length if length is not None else 0
+        field_defs.append(f"    {{{offset}, {enum_type}, {size_field_str}, {array_len}}},")
+    return f"""
+static const FieldDescriptor {struct_name}_fields[] = {{
+{chr(10).join(field_defs)}
+}};
+
+static const StructDescriptor {struct_name}_desc = {{
+    .size = sizeof({struct_name}),
+    .field_count = {filed_count},
+    .fields = {struct_name}_fields,
+}};
+"""
+
+
+def generate_base_type_descriptor(used_base_type):
+    base_type_def = ""
+    for base_type in used_base_type:
+        base_type_def += f"""
+static const FieldDescriptor {base_type}_fields[] = {{
+0, {gen_field_enum_type(base_type)}, -1, 0
+}};
+
+static const StructDescriptor {base_type}_desc = {{
+    .size = sizeof({base_type}),
+    .field_count = 1,
+    .fields = {base_type}_fields,
+}};
+    """
+        print(base_type_def)
+    return base_type_def
+
+# ====================================================================================================================
+
 # 输入文件内容
 input_file_content = """"""
 if len(sys.argv) != 3:
@@ -32,7 +89,7 @@ data_list = list(csv_reader)
 struct_list = list(csv.reader(struct_definition_csv.strip().splitlines()))
 content = ""
 
-
+# =======================================================================================================================
 # 生成.h文件内容
 h_file_content = (
     f"#ifndef {file_name.upper()}_H\n"
@@ -40,17 +97,28 @@ h_file_content = (
     '#include "fprotocol.h"\n\n'
 )
 
+
 struct_maps = {}
+index = 0
 for row in struct_list:
     struct_name,ttype,name,len = row
     len = len.strip()
     if struct_name not in struct_maps.keys():
         struct_maps[struct_name] = []
-    struct_maps[struct_name].append((ttype,name,len))
+        index = -1
+    if len:
+        new_name = f"_{name}_size"
+        struct_maps[struct_name].append(('uint16_t',new_name,None,None))
+        index+=1
+        struct_maps[struct_name].append((ttype,name,len,index))
+        index+=1
+        continue
+    index+=1
+    struct_maps[struct_name].append((ttype,name,len,None))
 
 def struc2cdef(struct_name, struct):
     astr = 'typedef struct {\n'
-    for ttype, name, len in struct:
+    for ttype, name, len ,size_index in struct:
         if len:
             astr += f'    {ttype} {name}[{len}];\n'
         else:
@@ -81,27 +149,51 @@ for row in data_list:
         f"void read_{var_name}(fprotocol_handler *handler,uint16_t node);\n"
     )
 
+
 h_file_content += f"\n\n\nextern fprotocol_get_index_info_t {file_name.lower()}_index_info;\n"
 h_file_content += "\n#endif /* GENERATED_H */\n"
+
+
+# =======================================================================================================================
 
 # 生成.c文件内容
 c_file_content = f"""
 #include \"{file_name}Proto.h\"
 
 """.strip() + "\n\n"
+index2struct_desc = {}
 
 # 定义变量
 for row in data_list:
     _, data_type, var_name, _ = row
     c_file_content += f"{data_type} {var_name};\n"
 
+for struct_name,structs in struct_maps.items():
+    # h_file_content += struc2cdef(struct_name,struct) + "\n\n"
+    c_file_content+= generate_struct_descriptor(struct_name,structs)
+    # print(struct_name,struct,)
+
+
+data_types_array = {}
+for row in data_list:
+    index, data_type, var_name, _ = row
+    if data_type not in struct_maps.keys():
+        data_types_array[data_type] = None
+    print(data_types_array.keys())
+c_file_content += generate_base_type_descriptor(data_types_array.keys())
+
+
 # 定义数据表
 c_file_content += "\nfprotocol_data data_table[] = {\n"
 for i, row in enumerate(data_list):
     index, data_type, var_name, callback_flag = row
     callback_function = f"callback_{var_name}" if callback_flag == '1' else "NULL"
-    c_file_content += f"    {{{index}, sizeof({var_name}), &{var_name}, {callback_function}}},\n"
+    struct_desc = f"&{data_type}_desc" if data_type in struct_maps.keys() else f"&{data_type}_desc"
+    # print(data_type,struct_maps)
+    c_file_content += f"    {{{index}, sizeof({var_name}), &{var_name}, {callback_function},{struct_desc}}},\n"
+    index2struct_desc[index] = struct_desc
 c_file_content += "};\n\n"
+
 
 # 实现fprotocol_get_index_info函数
 c_file_content += f"fprotocol_data *{file_name.lower()}_fprotocol_get_index_info(uint16_t index)\n"
@@ -111,18 +203,23 @@ for i, row in enumerate(data_list):
     c_file_content += f"    case {index}:\n        return &data_table[{i}];\n        break;\n"
 c_file_content += "    default:\n        break;\n    }\n    return NULL;\n}\n"
 
+
+
 # 读取写入函数生成
 for row in data_list:
     index, data_type, var_name, callback_flag = row
+    struct_desc  = "NULL" if index2struct_desc[index] == 'NULL' else f"{index2struct_desc[index]}" 
     c_file_content += (
         f"""void write_{var_name}(fprotocol_handler *handler,uint16_t node,uint8_t response)\n{{
-    fprotocol_write(handler, node, response ? SERVICE_REQUEST_WRITE : TRANSPORT_DATA, {index}, &{var_name}, sizeof({var_name}));\n}}\n""")
+    fprotocol_write(handler, node, response ? SERVICE_REQUEST_WRITE : TRANSPORT_DATA, {index}, &{var_name}, sizeof({var_name}),{struct_desc});\n}}\n""")
     c_file_content += (
         f"""void read_{var_name}(fprotocol_handler *handler,uint16_t node)\n{{
-    fprotocol_write(handler, node, SERVICE_REQUEST_READ, {index}, &{var_name}, sizeof({var_name}));\n}}\n""")
+    fprotocol_write(handler, node, SERVICE_REQUEST_READ, {index}, &{var_name}, sizeof({var_name}),{struct_desc});\n}}\n""")
 
 c_file_content += f"fprotocol_get_index_info_t {file_name.lower()}_index_info = {file_name.lower()}_fprotocol_get_index_info;"
 
+
+# =======================================================================================================================================================================
 # 保存到文件
 def save_to_file(filename, content):
     with open(filename, 'w',encoding='utf-8') as f:

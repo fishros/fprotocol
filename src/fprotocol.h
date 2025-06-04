@@ -5,12 +5,40 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 
-#define RING_BUFFER_SIZE 1024
-#define FPROTOCOL_FRAME_DATA_SIZE 1024
+#define RING_BUFFER_SIZE 1400
+#define FPROTOCOL_FRAME_DATA_SIZE 1400
 #define MAX_NODE 10
 
 typedef int16_t (*fprotocol_callback)(uint16_t type, uint32_t from, uint16_t error_code);
+
+// 支持的基础类型
+typedef enum {
+    TYPE_UINT8,
+    TYPE_UINT16,
+    TYPE_UINT32,
+    TYPE_INT8,
+    TYPE_INT16,
+    TYPE_INT32,
+    TYPE_FLOAT,
+    TYPE_STRUCT,  // 支持嵌套
+} FieldType;
+
+// 单个字段描述符
+typedef struct {
+    uint16_t offset;     // 字段在结构体中的偏移
+    uint8_t type;        // 使用 FieldType enum
+    int8_t size_field;   // 如果为变长数组，指向前面字段的下标；否则为 -1
+    uint16_t array_len;  // 如果为固定数组，填写数组长度；否则为 0
+} FieldDescriptor;
+
+// 整体结构体描述符
+typedef struct {
+    uint16_t size;                   // 总大小（sizeof）
+    uint8_t field_count;            // 字段数量
+    const FieldDescriptor* fields;  // 字段描述符数组
+} StructDescriptor;
 
 typedef struct
 {
@@ -18,10 +46,11 @@ typedef struct
     uint16_t data_size;
     void *data;
     fprotocol_callback callback;
-    // fprotocol_callback callback_response;
+    const StructDescriptor* struct_desc; // 结构体描述符
 } fprotocol_data;
 
 typedef fprotocol_data *(*fprotocol_get_index_info_t)(uint16_t index);
+
 
 typedef enum
 {
@@ -31,7 +60,8 @@ typedef enum
     SERVICE_RESPONSE_READ,
     SERVICE_RESPONSE_ERROR, // Data 2byte -> Error code
     TRANSPORT_DATA,
-    HEART,
+    HEART_PING, // 心跳-PING
+    HEART_PONG, // 心跳-PONG
     MAX,
 } fprotocol_type;
 
@@ -73,6 +103,7 @@ typedef struct
     uint8_t snode_count;                  // 已有节点数量
     uint16_t snode_index_table[MAX_NODE]; // 节点索引表
     fprotocol_get_index_info_t fprotocol_get_index_info_table[MAX_NODE];
+    int8_t (*heart_ping_callback)(uint16_t node);
 } fprotocol_handler;
 
 void fring_init(fring_buffer *buffer, uint32_t size);
@@ -90,9 +121,12 @@ void fprotocol_tick(fprotocol_handler *handler);
 void fprotocol_read_put(fprotocol_handler *handler,uint8_t *buf, uint32_t size);
 void fprotocol_req_deal(fprotocol_handler *handler);
 void fprotocol_delete(fprotocol_handler *handler);
-void fprotocol_write(fprotocol_handler *handler, uint16_t node, uint8_t type, uint16_t index, void *data, uint16_t size);
+uint16_t fprotocol_write(fprotocol_handler *handler, uint16_t node, uint8_t type, uint16_t index, void *data, uint16_t size,const StructDescriptor* desc);
 // void fprotocol_write_index(fprotocol_handler *handler, uint16_t index, uint8_t *data, uint16_t size);
 uint16_t checksum16(const uint8_t *data, size_t length);
-// extern fprotocol_get_index_info_t* fprotocol_get_index_info;
-
+int8_t fprotocol_heart_ping(fprotocol_handler *handler, uint16_t node);
+int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*callback)(uint16_t node));
+size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDescriptor *desc);
+size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDescriptor *desc);
 #endif // FPROTOCOL_H
+

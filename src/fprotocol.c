@@ -1,7 +1,8 @@
 #include "fprotocol.h"
-
+// #include <Arduino.h>
 static uint8_t FRAME_HEAD[4] = {0x55, 0xAA, 0x55, 0xAA};
-// #define DEBUG
+
+// #define DEBUG 1
 
 void fprotocol_add_slave_node(fprotocol_handler *handler, uint8_t node, fprotocol_get_index_info_t get_index_info)
 {
@@ -16,33 +17,33 @@ void fprotocol_add_slave_node(fprotocol_handler *handler, uint8_t node, fprotoco
 
 fprotocol_data *fprotocol_get_slave_node_data(fprotocol_handler *handler, uint16_t node, uint16_t index)
 {
-    printf("%d\n",__LINE__);
-    if(handler->snode_count == 0)
+    printf("%d\n", __LINE__);
+    if (handler->snode_count == 0)
     {
         return NULL;
     }
     for (int i = 0; i < handler->snode_count; i++)
     {
-        printf("%d\n",__LINE__);
+        printf("%d\n", __LINE__);
 
         if (handler->snode_index_table[i] == node)
         {
-            printf("%d\n",__LINE__);
+            // printf("%d\n", __LINE__);
             // printf("%d:%p,%p\n",__LINE__,*handler,handler->fprotocol_get_index_info_table[i]);
-            fprotocol_data * data = handler->fprotocol_get_index_info_table[i](index);
-            printf("%d\n",__LINE__);
+            fprotocol_data *data = handler->fprotocol_get_index_info_table[i](index);
+            // printf("%d\n", __LINE__);
             return data;
         }
     }
     return NULL;
 }
 
-void fprotocol_read_put(fprotocol_handler *handler,uint8_t *buf, uint32_t size)
+void fprotocol_read_put(fprotocol_handler *handler, uint8_t *buf, uint32_t size)
 {
     fring_put(handler->rxbuff, buf, size);
-    #ifdef DEBUG    
-    printf("put data to ring_buffer_size: %d %s\n", size,buf);
-    #endif
+#ifdef DEBUG
+    printf("put data to ring_buffer_size: %d %s\n", size, buf);
+#endif
 }
 
 void fprotocol_tick(fprotocol_handler *handler)
@@ -63,19 +64,18 @@ void fprotocol_tick(fprotocol_handler *handler)
         }
     }
 #ifdef DEBUG
-    printf("%d:%p\n",__LINE__,*handler);
-    printf("fring_size: %d frame->recv_size:%u\n", fring_size(handler->rxbuff),frame->recv_size);
+    printf("fring_size: %d frame->recv_size:%u\n", fring_size(handler->rxbuff), frame->recv_size);
 #endif
     if (frame->recv_size < 4)
     {
 #ifdef DEBUG
-        printf("frame->recv_size: %d\n", frame->recv_size);
+        // printf("frame->recv_size: %d\n", frame->recv_size);
 #endif
         while (frame->recv_size < 4)
         {
             if (fring_get(handler->rxbuff, &rdata, 1))
             {
-                #ifdef DEBUG
+#ifdef DEBUG
                 printf("rdata: %02x\n", rdata);
 #endif
                 if (rdata == FRAME_HEAD[frame->recv_size])
@@ -95,7 +95,9 @@ void fprotocol_tick(fprotocol_handler *handler)
             }
             else
             {
-                printf("fring_size(handler->rxbuff)=%d\n",fring_size(handler->rxbuff));
+#ifdef DEBUG
+                // printf("fring_size(handler->rxbuff)=%d\n", fring_size(handler->rxbuff));
+#endif
                 break;
             }
         }
@@ -114,48 +116,42 @@ void fprotocol_tick(fprotocol_handler *handler)
 #ifdef DEBUG
             printf("Header Info - Node: %02x, Type: %02x, Index: %d, DSize: %d \n",
                    frame->header.node, frame->header.type, frame->header.index, frame->header.data_size);
-            printf("%d\n",__LINE__);
+            printf("%d\n", __LINE__);
 #endif
-
             // 判断nodeid是否是当前节点，是表示是从站
             if (frame->header.node == handler->node)
             {
-                // printf("%d\n",__LINE__);
-
-                frame->fdata = (handler->fprotocol_get_node_info)(frame->header.index);
-                if (frame->fdata == NULL) // 无此索引
+                switch (frame->header.type)
                 {
+                case HEART_PONG:
+                    frame->data_size = 0;
+                    break;
+                case SERVICE_RESPONSE_ERROR:
+                    frame->data_size = frame->header.data_size; // Error code
+                    break;
+                case SERVICE_RESPONSE_READ:
+                case TRANSPORT_DATA:
+                    frame->data_size = frame->header.data_size;
+                    frame->fdata = (handler->fprotocol_get_node_info)(frame->header.index);
+                    if (frame->fdata == NULL) // 无此索引
+                    {
 #ifdef DEBUG
-                    printf("No this index\n");
+                        printf("No this index\n");
 #endif
-
+                        frame->data_size = 0;
+                        frame->recv_size = 0;
+                    }
+                    break;
+                default:
                     frame->data_size = 0;
                     frame->recv_size = 0;
-                }
-                else
-                {
-                    #ifdef DEBUG
-                    printf("Get Data Size: %d\n",frame->header.data_size );
-#endif
-                    frame->data_size = frame->header.data_size;
-                    // switch (frame->header.type)
-                    // {
-                    // case SERVICE_RESPONSE_ERROR:
-                    //     frame->data_size = frame->header.data_size; // Error code
-                    //     break;
-                    // case SERVICE_RESPONSE_READ:
-                    //     frame->data_size = frame->header.data_size;
-                    //     break;
-                    // default:
-                    //     frame->data_size = frame->fdata->data_size;
-                    //     break;
-                    // }
+                    break;
                 }
             }
             // 判断是否是来自从站的消息/从站响应错误/从站请求写入/从站响应读取/从站传输数据
             else if (fprotocol_get_slave_node_data(handler, frame->header.node, frame->header.index) != NULL)
             {
-                printf("%d\n",__LINE__);
+                printf("%d\n", __LINE__);
                 frame->fdata = fprotocol_get_slave_node_data(handler, frame->header.node, frame->header.index);
                 switch (frame->header.type)
                 {
@@ -170,6 +166,9 @@ void fprotocol_tick(fprotocol_handler *handler)
                 case SERVICE_RESPONSE_READ:
                 case TRANSPORT_DATA:
                     frame->data_size = frame->header.data_size;
+                    break;
+                case HEART_PONG:
+                    frame->data_size = 0;
                     break;
                 default:
                     // reset
@@ -206,7 +205,7 @@ void fprotocol_tick(fprotocol_handler *handler)
         }
     }
 
-    if(frame->recv_size >(FPROTOCOL_FRAME_DATA_SIZE))
+    if (frame->recv_size > (FPROTOCOL_FRAME_DATA_SIZE))
     {
         frame->recv_size = 0;
     }
@@ -241,10 +240,18 @@ void fprotocol_req_deal(fprotocol_handler *handler)
 #ifdef DEBUG
         printf("Type: %02x\n", frame->header.type);
 #endif
+        if (frame->header.type == HEART_PONG)
+        {
+            if (handler->heart_ping_callback != NULL)
+            {
+                handler->heart_ping_callback(frame->header.node);
+            }
+            return;
+        }
         // 需要写入数据的情况
         if (frame->header.type == SERVICE_REQUEST_WRITE || frame->header.type == TRANSPORT_DATA)
         {
-            memcpy(frame->fdata->data, frame->data + 11, frame->data_size); // 拷贝数据到指定节点数据体 TODO: 确认frame->fdata->data 大小足够放下
+            fprotocol_unpack_struct(frame->data + 11, frame->fdata->data, frame->fdata->struct_desc); // 拷贝数据到指定节点数据体
         }
         // 回调
         if (frame->fdata->callback != NULL)
@@ -256,37 +263,17 @@ void fprotocol_req_deal(fprotocol_handler *handler)
         {
             if (ret == 0)
             {
-                // frame->header.type = SERVICE_RESPONSE_WRITE;
-                // memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
-                // uint16_t checksum = checksum16(send_buff, 9);
-                // send_buff[9] = checksum >> 8;
-                // send_buff[10] = checksum & 0xFF;
-                // handler->write(frame->from, send_buff, 11);
-                fprotocol_write(handler, frame->header.node, SERVICE_RESPONSE_WRITE, frame->header.index, NULL, 0);
+                fprotocol_write(handler, frame->header.node, SERVICE_RESPONSE_WRITE, frame->header.index, NULL, 0, NULL);
             }
             else
             {
-                // frame->header.type = SERVICE_RESPONSE_ERROR;
-                // memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
-                // memcpy(send_buff + 9, &ret, 2);
-                // uint16_t checksum = checksum16(send_buff, 11);
-                // send_buff[11] = checksum >> 8;
-                // send_buff[12] = checksum & 0xFF;
-                // handler->write(frame->from, send_buff, 13);
-                fprotocol_write(handler, frame->header.node, SERVICE_RESPONSE_ERROR, frame->header.index, &ret, 2);
+                fprotocol_write(handler, frame->header.node, SERVICE_RESPONSE_ERROR, frame->header.index, &ret, 2, NULL);
             }
         }
         // 需要回复2 SERVICE_REQUEST_WRITE
         if (frame->header.type == SERVICE_REQUEST_READ)
         {
-            // frame->header.type = SERVICE_RESPONSE_READ;
-            // memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
-            // memcpy(send_buff + 9, frame->fdata->data, frame->fdata->data_size);
-            // uint16_t checksum = checksum16(send_buff, 9 + frame->fdata->data_size);
-            // send_buff[9 + frame->fdata->data_size + 1] = checksum >> 8;
-            // send_buff[9 + frame->fdata->data_size + 2] = checksum & 0xFF;
-            // handler->write(frame->from, send_buff, 9 + frame->fdata->data_size + 2);
-            fprotocol_write(handler, frame->header.node, SERVICE_RESPONSE_READ, frame->header.index, frame->fdata->data, frame->fdata->data_size);
+            fprotocol_write(handler, frame->header.node, SERVICE_RESPONSE_READ, frame->header.index, frame->fdata->data, frame->fdata->data_size, frame->fdata->struct_desc);
         }
     }
     else // 能到这里一定是主站了
@@ -304,25 +291,132 @@ void fprotocol_req_deal(fprotocol_handler *handler)
     }
 }
 
-void fprotocol_write(fprotocol_handler *handler, uint16_t node, uint8_t type, uint16_t index, void *data, uint16_t size)
+size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDescriptor *desc)
 {
-    printf("size:%d\n",size);
+    size_t offset = 0;
+    for (int i = 0; i < desc->field_count; ++i)
+    {
+        FieldDescriptor f = desc->fields[i];
+        const uint8_t *field_ptr = (const uint8_t *)data + f.offset;
+        size_t len = 0;
+
+        if (f.size_field >= 0)
+        {
+            // 不定长数组
+            const FieldDescriptor *size_fd = &desc->fields[f.size_field];
+            const uint8_t *size_ptr = (const uint8_t *)data + size_fd->offset;
+            len = *size_ptr; // 假设是 uint8_t 类型
+        }
+        else if (f.array_len > 0)
+        {
+            // 固定长度数组
+            len = f.array_len;
+        }
+        else
+        {
+            // 单值字段
+            switch (f.type)
+            {
+            case TYPE_UINT8:
+                len = 1;
+                break;
+            case TYPE_UINT16:
+                len = 2;
+                break;
+            case TYPE_UINT32:
+                len = 4;
+                break;
+            case TYPE_FLOAT:
+                len = 4;
+                break;
+            default:
+                break;
+            }
+        }
+
+        memcpy(buffer + offset, field_ptr, len);
+        offset += len;
+    }
+    return offset;
+}
+
+size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDescriptor *desc)
+{
+#ifdef DEBUG
+    printf("fprotocol_unpack_struct ");
+#endif
+    size_t offset = 0;
+    for (int i = 0; i < desc->field_count; ++i)
+    {
+        FieldDescriptor f = desc->fields[i];
+        uint8_t *field_ptr = (uint8_t *)data + f.offset;
+        size_t len = 0;
+
+        if (f.size_field >= 0)
+        {
+            // 不定长数组，先读前面的 length 字段
+            const FieldDescriptor *size_fd = &desc->fields[f.size_field];
+            const uint8_t *size_ptr = (const uint8_t *)data + size_fd->offset;
+            len = *size_ptr;
+        }
+        else if (f.array_len > 0)
+        {
+            len = f.array_len;
+        }
+        else
+        {
+            switch (f.type)
+            {
+            case TYPE_UINT8:
+                len = 1;
+                break;
+            case TYPE_UINT16:
+                len = 2;
+                break;
+            case TYPE_UINT32:
+                len = 4;
+                break;
+            case TYPE_FLOAT:
+                len = 4;
+                break;
+            default:
+                break;
+            }
+        }
+
+        memcpy(field_ptr, buffer + offset, len);
+        offset += len;
+    }
+    return offset;
+}
+
+uint16_t fprotocol_write(fprotocol_handler *handler, uint16_t node, uint8_t type, uint16_t index, void *data, uint16_t size, const StructDescriptor *desc)
+{
+#ifdef DEBUG
+    printf("fprotocol_write size:%d\n", size);
+#endif
     static uint8_t send_buff[FPROTOCOL_FRAME_DATA_SIZE];
     memcpy(send_buff, FRAME_HEAD, 4);
     fprotocol_frame *frame = handler->frame;
     frame->header.node = node;
     frame->header.type = type;
     frame->header.index = index;
-    frame->header.data_size = size; // Data size 2Byte
-    memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
     if (size)
     {
-        memcpy(send_buff + 11, data, size);
+        if (desc)
+            size = fprotocol_pack_struct(send_buff + 11, data, desc);
+        else
+            memcpy(send_buff + 11, data, size); // Data
     }
+    frame->header.data_size = size;
+    memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
+#ifdef DEBUG
+    printf("data_size: %02x\n", frame->header.data_size);
+#endif
     uint16_t checksum = checksum16(send_buff, 11 + size);
     send_buff[11 + size] = checksum >> 8;
     send_buff[11 + size + 1] = checksum & 0xFF;
-    handler->write(node, send_buff, 11 + size + 2);
+    return handler->write(node, send_buff, 11 + size + 2);
 }
 
 fprotocol_handler *fprotocol_init(int32_t (*read)(int16_t, uint8_t *, int32_t), int32_t (*write)(int16_t, uint8_t *, int32_t))
@@ -350,6 +444,20 @@ void fprotocol_set_host_node(fprotocol_handler *handler, uint8_t node, fprotocol
     handler->fprotocol_get_node_info = get_index_info;
 }
 
+int8_t fprotocol_heart_ping(fprotocol_handler *handler, uint16_t node)
+{
+    return fprotocol_write(handler, node, HEART_PING, 0, NULL, 0, NULL) > 0;
+}
+
+int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*callback)(uint16_t node))
+{
+    if (handler == NULL || callback == NULL)
+    {
+        return -1; // Return error if handler or callback is NULL
+    }
+    handler->heart_ping_callback = callback;
+    return 0; // Return success
+}
 void fring_init(fring_buffer *buffer, uint32_t size)
 {
     if (buffer != NULL)
