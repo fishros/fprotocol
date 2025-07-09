@@ -24,26 +24,40 @@ class DynamicStruct:
     def parse(self, data: bytes):
         index = 0
         next_array_size = 0
+        total_len = len(data)
+        
         for field in self.fields:
-            field_name, fmt,_ = field
+            field_name, fmt, _ = field
             field_size = struct.calcsize(fmt)
-            # parse current data
-            # print(field,data)
+
+            
+            # 原有解析逻辑
             if field_name.startswith("_"):
                 self.values[field_name] = struct.unpack(fmt, data[index:index+field_size])[0]
                 next_array_size = self.values[field_name]
-                index+= field_size
+                index += field_size
             else:
                 if next_array_size:
                     fmt_without_num = fmt[-1]  # Get the format type (like 's', 'H', etc.)
                     dynamic_fmt = f"{next_array_size}{fmt_without_num}"
+
+                    logger.debug(f'field_name {field_name}')
+                    logger.debug(f'next_array_size {next_array_size}')
+                    logger.debug(fmt)
+                    logger.debug(data[index:index+field_size])
+
                     self.values[field_name] = struct.unpack(dynamic_fmt, data[index:index+next_array_size])[0]
                     index+= next_array_size
                     next_array_size = 0
                 else:
+                    
+                    logger.debug(f'field_name {field_name}')
+                    logger.debug(fmt)
+                    logger.debug(data[index:index+field_size])
+
                     self.values[field_name] = struct.unpack(fmt, data[index:index+field_size])[0]
                     index+= field_size
-        
+
     def to_bytes(self) -> bytes:
         packed = bytearray()
         next_array_size = 0
@@ -251,16 +265,16 @@ class FProtocol:
                     self.frame['fdata'] = None
                     logger.debug(f"Recv data from node {self.frame['header'].node} data_size={self.frame['header'].data_size}")
                 else:
-                    fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
-                    self.frame['fdata'] = fdata
+                    # fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
+                    # self.frame['fdata'] = fdata
                     if header.type == FProtocolType.SERVICE_RESPONSE_ERROR:
                         self.frame['data_size'] = self.frame['header'].data_size  # 2
                     elif header.type == FProtocolType.SERVICE_REQUEST_WRITE:
                         self.frame['data_size'] = self.frame['header'].data_size # 0
                     elif header.type == FProtocolType.SERVICE_RESPONSE_READ:
-                        self.frame['data_size'] = self.frame['header'].data_size #self.frame['fdata'].csize
+                        self.frame['data_size'] = self.frame['header'].data_size 
                     elif header.type == FProtocolType.TRANSPORT_DATA:
-                        self.frame['data_size'] = self.frame['header'].data_size #self.frame['fdata'].csize
+                        self.frame['data_size'] = self.frame['header'].data_size 
                     else:
                         self.frame['recv_size'] = 0 # 重新接收
                 # print(self.frame['recv_size'],self.frame['data_size'])
@@ -297,22 +311,17 @@ class FProtocol:
 
     def process_frame(self,frame):
         header = frame['header']
+        fdata = None
         if header.node in self.slave_nodes.keys():
             if header.type == FProtocolType.HEART_PING:
                 self.fprotocol_write(header.node,FProtocolType.HEART_PONG,0,[])
             elif header.type == FProtocolType.SERVICE_RESPONSE_READ or header.type == FProtocolType.TRANSPORT_DATA:
-                # self.fprotocol_unpack_data(frame,bytes(frame['data'][11:]))
-                frame['fdata'].parse(bytes(frame['data'][11:]))
+                fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
+                fdata.parse(bytes(frame['data'][11:]))
 
-            if frame['fdata'] and frame['fdata'].callback:
-                frame['fdata'].callback(header.type,frame['fdata'],frame['error_code'])
+            if fdata and fdata.callback:
+                fdata.callback(header.type,fdata,frame['error_code'])
 
-
-    # def fprotocol_unpack_data(self,frame,data):
-    #     fdata = frame['fdata']
-    #     print(fdata.cstruct,fdata.csize,data) # H12sH12s 28 b'\x04\x00\x01\x02\x03\x04\x04\x00\x00\x00\x00\x00' 
-    #     # TODO: 根据fdata.cstruct解析数据，遇到字符根据对应长度直接分割解析，遇到数字的要看前一个H的大小来解析
-    #     return
 
     def fprotocol_write(self, node, type, index, data, data_size=0):
         frame = []
