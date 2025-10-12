@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+recursive-include src *.py
+recursive-include tool *.py *.fproto
+recursive-include example *.c *.h *.py
+recursive-include src *.c *.h

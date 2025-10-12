@@ -4,29 +4,29 @@ static uint8_t FRAME_HEAD[4] = {0x55, 0xAA, 0x55, 0xAA};
 
 // #define DEBUG 1
 
-void fprotocol_add_slave_node(fprotocol_handler *handler, uint8_t node, fprotocol_get_index_info_t get_index_info)
+void fprotocol_add_other_node(fprotocol_handler *handler, uint8_t node, fprotocol_get_index_info_t get_index_info)
 {
-    if (handler->snode_count >= MAX_NODE)
+    if (handler->other_node_count >= MAX_NODE)
     {
         return;
     }
-    handler->snode_index_table[handler->snode_count] = node;
-    handler->fprotocol_get_index_info_table[handler->snode_count] = get_index_info;
-    handler->snode_count++;
+    handler->other_node_index_table[handler->other_node_count] = node;
+    handler->fprotocol_get_index_info_table[handler->other_node_count] = get_index_info;
+    handler->other_node_count++;
 }
 
-fprotocol_data *fprotocol_get_slave_node_data(fprotocol_handler *handler, uint16_t node, uint16_t index)
+fprotocol_data *fprotocol_get_other_node_data(fprotocol_handler *handler, uint16_t node, uint16_t index)
 {
     printf("%d\n", __LINE__);
-    if (handler->snode_count == 0)
+    if (handler->other_node_count == 0)
     {
         return NULL;
     }
-    for (int i = 0; i < handler->snode_count; i++)
+    for (int i = 0; i < handler->other_node_count; i++)
     {
         printf("%d\n", __LINE__);
 
-        if (handler->snode_index_table[i] == node)
+        if (handler->other_node_index_table[i] == node)
         {
             // printf("%d\n", __LINE__);
             // printf("%d:%p,%p\n",__LINE__,*handler,handler->fprotocol_get_index_info_table[i]);
@@ -118,8 +118,8 @@ void fprotocol_tick(fprotocol_handler *handler)
                    frame->header.node, frame->header.type, frame->header.index, frame->header.data_size);
             printf("%d\n", __LINE__);
 #endif
-            // 判断nodeid是否是当前节点，是表示是从站
-            if (frame->header.node == handler->node)
+            // 判断nodeid是否是自己的节点ID
+            if (frame->header.node == handler->self_node_id)
             {
                 switch (frame->header.type)
                 {
@@ -148,11 +148,11 @@ void fprotocol_tick(fprotocol_handler *handler)
                     break;
                 }
             }
-            // 判断是否是来自从站的消息/从站响应错误/从站请求写入/从站响应读取/从站传输数据
-            else if (fprotocol_get_slave_node_data(handler, frame->header.node, frame->header.index) != NULL)
+            // 判断是否是来自其他节点的消息/其他节点响应错误/其他节点请求写入/其他节点响应读取/其他节点传输数据
+            else if (fprotocol_get_other_node_data(handler, frame->header.node, frame->header.index) != NULL)
             {
                 printf("%d\n", __LINE__);
-                frame->fdata = fprotocol_get_slave_node_data(handler, frame->header.node, frame->header.index);
+                frame->fdata = fprotocol_get_other_node_data(handler, frame->header.node, frame->header.index);
                 switch (frame->header.type)
                 {
                 case SERVICE_RESPONSE_ERROR:
@@ -235,7 +235,7 @@ void fprotocol_req_deal(fprotocol_handler *handler)
     uint16_t ret = 0;
     memcpy(send_buff, FRAME_HEAD, 4);
     // 从站
-    if (frame->header.node == handler->node)
+    if (frame->header.node == handler->self_node_id)
     {
 #ifdef DEBUG
         printf("Type: %02x\n", frame->header.type);
@@ -431,22 +431,22 @@ fprotocol_handler *fprotocol_init(int32_t (*read)(int16_t, uint8_t *, int32_t), 
     handler->frame = (fprotocol_frame *)malloc(sizeof(fprotocol_frame));
     handler->frame->data = (uint8_t *)malloc(FPROTOCOL_FRAME_DATA_SIZE);
     handler->frame->recv_size = 0;
-    handler->snode_count = 0;
+    handler->other_node_count = 0;
     handler->read = read;
     handler->write = write;
     fring_init(handler->rxbuff, RING_BUFFER_SIZE);
     return handler; // 返回指针
 }
 
-void fprotocol_set_host_node(fprotocol_handler *handler, uint8_t node, fprotocol_get_index_info_t get_index_info)
+void fprotocol_set_self_node(fprotocol_handler *handler, uint8_t node, fprotocol_get_index_info_t get_index_info)
 {
-    handler->node = node;
+    handler->self_node_id = node;
     handler->fprotocol_get_node_info = get_index_info;
 }
 
-int8_t fprotocol_heart_ping(fprotocol_handler *handler, uint16_t node)
+int8_t fprotocol_heart_ping(fprotocol_handler *handler)
 {
-    return fprotocol_write(handler, node, HEART_PING, 0, NULL, 0, NULL) > 0;
+    return fprotocol_write(handler, handler->self_node_id, HEART_PING, 0, NULL, 0, NULL) > 0;
 }
 
 int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*callback)(uint16_t node))
