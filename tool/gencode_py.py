@@ -2,11 +2,31 @@ import csv
 import sys
 import re
 import os
+import shutil
+
+def copy_fprotocol_file(output_directory):
+    """复制fprotocol.py文件到输出目录"""
+    # 获取当前脚本的目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 获取项目根目录（当前脚本在tool目录下，所以需要上一级）
+    project_root = os.path.dirname(current_dir)
+    # fprotocol.py文件路径（现在在src目录下）
+    fprotocol_source = os.path.join(project_root, "src", "fprotocol.py")
+    fprotocol_dest = os.path.join(output_directory, "fprotocol.py")
+    
+    if os.path.exists(fprotocol_source):
+        shutil.copy2(fprotocol_source, fprotocol_dest)
+        print(f"已复制 fprotocol.py 到 {fprotocol_dest}")
+    else:
+        print(f"警告: 找不到源文件 {fprotocol_source}")
 
 def generate_python_code(input_file, output_directory):
     """生成Python代码的主函数"""
     if output_directory=='.':
         output_directory = os.getcwd()  # 使用当前工作目录
+    
+    # 复制fprotocol.py文件
+    copy_fprotocol_file(output_directory)
     
     file_name = input_file
     if '/' in file_name:
@@ -167,7 +187,7 @@ def generate_python_code(input_file, output_directory):
             sum_content += f'\n        bytes_data = struct.pack("{type2struct[data_type]}",self.{var_name})'
         sum_content += f'\n        fprotocol.fprotocol_write(node,type,{addr},bytes_data,len(bytes_data))'
 
-    sum_content = 'import struct\nfrom  fprotocol import DynamicStruct\n' + sum_content
+    sum_content = 'import struct\nfrom fprotocol import DynamicStruct\n' + sum_content
 
     # 保存到文件
     print(sum_content)

@@ -8,19 +8,3 @@ __version__ = "1.0.0"
 __author__ = "FishROS Team"
 __email__ = ""
 
-# 导入主要的类和函数
-from .fprotocol import (
-    DynamicStruct,
-    CircularBuffer,
-    FProtocolHeader,
-    FProtocolType,
-    FProtocol,
-)
-
-__all__ = [
-    "DynamicStruct",
-    "CircularBuffer", 
-    "FProtocolHeader",
-    "FProtocolType",
-    "FProtocol",
-]
