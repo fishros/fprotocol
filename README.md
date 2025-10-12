@@ -7,13 +7,13 @@
 ### 通过pip安装（推荐）
 
 ```bash
-pip install git+https://github.com/your-username/fprotocol.git
+pip install git+https://github.com/fishros/fprotocol.git
 ```
 
 ### 本地开发安装
 
 ```bash
-git clone https://github.com/your-username/fprotocol.git
+git clone https://github.com/fishros/fprotocol.git
 cd fprotocol
 pip install -e .
 ```

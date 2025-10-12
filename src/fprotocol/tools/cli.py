@@ -11,22 +11,17 @@ import sys
 import os
 from pathlib import Path
 
-# 添加工具目录到路径
-current_dir = Path(__file__).parent.parent.parent.parent  # 回到项目根目录
-tool_dir = current_dir / "tool"
-sys.path.insert(0, str(tool_dir))
-
 try:
-    from gencode_c import generate_c_code
-    from gencode_py import generate_python_code
+    # 尝试从当前包导入代码生成工具
+    from .gencode_c import generate_c_code
+    from .gencode_py import generate_python_code
 except ImportError:
     # 如果无法导入，尝试直接执行脚本
     import subprocess
-    import tempfile
     
     def generate_c_code(input_file, output_directory):
         """通过子进程调用生成C代码"""
-        script_path = tool_dir / "gencode_c.py"
+        script_path = Path(__file__).parent / "gencode_c.py"
         result = subprocess.run([
             sys.executable, str(script_path), input_file, output_directory
         ], capture_output=True, text=True)
@@ -35,7 +30,7 @@ except ImportError:
     
     def generate_python_code(input_file, output_directory):
         """通过子进程调用生成Python代码"""
-        script_path = tool_dir / "gencode_py.py"
+        script_path = Path(__file__).parent / "gencode_py.py"
         result = subprocess.run([
             sys.executable, str(script_path), input_file, output_directory
         ], capture_output=True, text=True)
