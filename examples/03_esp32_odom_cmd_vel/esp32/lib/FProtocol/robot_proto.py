@@ -9,8 +9,6 @@ class RobotProto:
         self.index_table[0x0001] = self.led
         self.odom = DynamicStruct(self.float3d_t_desc)
         self.index_table[0x0002] = self.odom
-        self.cmd_vel = DynamicStruct(self.float3d_t_desc)
-        self.index_table[0x0003] = self.cmd_vel
 
     def get_index_data(self,index):
         return self.index_table[index]
@@ -22,7 +20,3 @@ class RobotProto:
     def write_odom(self,fprotocol,type,node):
         bytes_data = self.odom.to_bytes()
         fprotocol.fprotocol_write(node,type,0x0002,bytes_data,len(bytes_data))
-
-    def write_cmd_vel(self,fprotocol,type,node):
-        bytes_data = self.cmd_vel.to_bytes()
-        fprotocol.fprotocol_write(node,type,0x0003,bytes_data,len(bytes_data))
