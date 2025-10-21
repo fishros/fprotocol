@@ -82,10 +82,13 @@ def generate_python_code(input_file, output_directory):
             'char': 1
         }
         if len:
+            len_int = int(len)  # 确保len是整数
             if stype == 'uint8_t':
-                return f'{len}s', len
+                return f'{len_int}s', len_int
+            elif stype == 'char':
+                return f'{len_int}s', len_int  # char数组也使用s格式
             else:
-                return f'{type2struct[stype]*len}',type2len[stype] * len
+                return f'{type2struct[stype]*len_int}',type2len[stype] * len_int
         else:
             return type2struct[stype], type2len[stype]
         
@@ -102,10 +105,13 @@ def generate_python_code(input_file, output_directory):
             'char': "b'\x00'"
         }
         if len:
+            len_int = int(len)  # 确保len是整数
             if stype == 'uint8_t':
-                return """b'\\x00' * """ + str(len)
+                return """b'\\x00' * """ + str(len_int)
+            elif stype == 'char':
+                return f'b\'\\x00\' * {len_int}'  # char数组使用简洁格式
             else:
-                return [type2defaultv[stype]] * len
+                return [type2defaultv[stype]] * len_int
                 # return (type2defaultv[stype],) * len
         else:
             return type2defaultv[stype]
@@ -132,8 +138,9 @@ def generate_python_code(input_file, output_directory):
             # print(ttype, name, len)
             type_str, type_len = get_type_str_len(ttype, int(len) if len else None)
             if len:
+                len_int = int(len)
                 print(f"_{name}_size","H")
-                desc_str += f'("_{name}_size","H",{get_default_values("uint16_t",0)}),'
+                desc_str += f'("_{name}_size","H",0),'  # 设置为0，让DynamicStruct自动设置
             print(name, type_str)
             desc_str += f'("{name}","{type_str}",{get_default_values(ttype,len)}),'
         print(desc_str)
