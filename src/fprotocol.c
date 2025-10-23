@@ -55,7 +55,7 @@ void fprotocol_tick(fprotocol_handler *handler)
     if (handler->read)
     {
         int16_t rsize = handler->read(from, data, 256);
-        if (rsize)
+        if (rsize>0)
         {
             fring_put(handler->rxbuff, data, rsize);
 #ifdef DEBUG
