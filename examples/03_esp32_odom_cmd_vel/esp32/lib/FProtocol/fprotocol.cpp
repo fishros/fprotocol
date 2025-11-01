@@ -55,7 +55,7 @@ void fprotocol_tick(fprotocol_handler *handler)
     if (handler->read)
     {
         int16_t rsize = handler->read(from, data, 256);
-        if (rsize)
+        if (rsize>0)
         {
             fring_put(handler->rxbuff, data, rsize);
 #ifdef DEBUG
@@ -434,7 +434,6 @@ fprotocol_handler *fprotocol_init(int32_t (*read)(int16_t, uint8_t *, int32_t), 
     handler->other_node_count = 0;
     handler->read = read;
     handler->write = write;
-    handler->heart_ping_callback = NULL;
     fring_init(handler->rxbuff, RING_BUFFER_SIZE);
     return handler; // 返回指针
 }
