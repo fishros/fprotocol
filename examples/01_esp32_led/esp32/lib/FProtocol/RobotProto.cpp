@@ -34,6 +34,6 @@ void write_led(fprotocol_handler *handler,uint16_t node,uint8_t response)
 }
 void read_led(fprotocol_handler *handler,uint16_t node)
 {
-    fprotocol_write(handler, node, SERVICE_REQUEST_READ, 0x0001, &led, sizeof(led),&uint8_t_desc);
+    fprotocol_write(handler, node, SERVICE_REQUEST_READ, 0x0001, &led, 0,&uint8_t_desc);
 }
 fprotocol_get_index_info_t robot_index_info = robot_fprotocol_get_index_info;

@@ -4,6 +4,24 @@ import os
 import re
 import shutil
 
+try:
+    from importlib import resources
+    try:
+        # Python 3.9+
+        from importlib.resources import files as resource_files
+        _HAS_RESOURCE_FILES = True
+    except ImportError:
+        # Python 3.7-3.8
+        _HAS_RESOURCE_FILES = False
+except ImportError:
+    _HAS_RESOURCE_FILES = False
+
+try:
+    import pkg_resources
+    _HAS_PKG_RESOURCES = True
+except ImportError:
+    _HAS_PKG_RESOURCES = False
+
 
 def gen_field_enum_type(ttype):
     mapping = {
@@ -60,29 +78,72 @@ static const StructDescriptor {base_type}_desc = {{
 # ====================================================================================================================
 
 def copy_fprotocol_files(output_directory, code_type):
-    """拷贝fprotocol相关文件到输出目录"""
-    # 获取当前脚本所在目录的父目录
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(current_dir)
-    src_dir = os.path.join(project_root, 'src')
+    """拷贝fprotocol相关文件到输出目录，从包内读取"""
+    fprotocol_h_src = None
+    fprotocol_c_src = None
+    
+    # 方法1: 使用 pkg_resources 从包内读取（推荐，兼容性最好）
+    if _HAS_PKG_RESOURCES:
+        try:
+            fprotocol_h_path = pkg_resources.resource_filename('fprotocol', 'fprotocol.h')
+            fprotocol_c_path = pkg_resources.resource_filename('fprotocol', 'fprotocol.c')
+            if os.path.exists(fprotocol_h_path) and os.path.exists(fprotocol_c_path):
+                fprotocol_h_src = fprotocol_h_path
+                fprotocol_c_src = fprotocol_c_path
+        except Exception:
+            pass
+    
+    # 方法2: 使用 importlib.resources (Python 3.9+)
+    if not fprotocol_h_src and _HAS_RESOURCE_FILES:
+        try:
+            from importlib.resources import files
+            import fprotocol
+            fprotocol_package = files(fprotocol)
+            h_file = fprotocol_package / 'fprotocol.h'
+            c_file = fprotocol_package / 'fprotocol.c'
+            if h_file.exists() and c_file.exists():
+                # 如果包未压缩，可以直接访问路径
+                h_path = str(h_file)
+                c_path = str(c_file)
+                if os.path.exists(h_path) and os.path.exists(c_path):
+                    fprotocol_h_src = h_path
+                    fprotocol_c_src = c_path
+        except Exception:
+            pass
+    
+    # 方法3: 从包安装位置直接查找（fallback）
+    if not fprotocol_h_src:
+        try:
+            import fprotocol
+            package_dir = os.path.dirname(fprotocol.__file__)
+            h_path = os.path.join(package_dir, 'fprotocol.h')
+            c_path = os.path.join(package_dir, 'fprotocol.c')
+            if os.path.exists(h_path) and os.path.exists(c_path):
+                fprotocol_h_src = h_path
+                fprotocol_c_src = c_path
+        except Exception:
+            pass
     
     # 拷贝fprotocol.h
-    fprotocol_h_src = os.path.join(src_dir, 'fprotocol.h')
     fprotocol_h_dst = os.path.join(output_directory, 'fprotocol.h')
-    if os.path.exists(fprotocol_h_src):
+    if fprotocol_h_src and os.path.exists(fprotocol_h_src):
         shutil.copy2(fprotocol_h_src, fprotocol_h_dst)
         print(f"已拷贝 fprotocol.h 到 {output_directory}")
+    else:
+        print(f"错误: 找不到 fprotocol.h 源文件（请在包内包含该文件）")
+        return
     
     # 拷贝fprotocol.c或fprotocol.cpp
-    fprotocol_c_src = os.path.join(src_dir, 'fprotocol.c')
     if code_type == 'cpp':
         fprotocol_c_dst = os.path.join(output_directory, 'fprotocol.cpp')
     else:
         fprotocol_c_dst = os.path.join(output_directory, 'fprotocol.c')
     
-    if os.path.exists(fprotocol_c_src):
+    if fprotocol_c_src and os.path.exists(fprotocol_c_src):
         shutil.copy2(fprotocol_c_src, fprotocol_c_dst)
         print(f"已拷贝 fprotocol.{code_type} 到 {output_directory}")
+    else:
+        print(f"错误: 找不到 fprotocol.c 源文件（请在包内包含该文件）")
 
 def generate_c_code(input_file, output_directory, code_type='c'):
     """生成C/C++代码的主函数"""
@@ -243,7 +304,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
     fprotocol_write(handler, node, response ? SERVICE_REQUEST_WRITE : TRANSPORT_DATA, {index}, &{var_name}, sizeof({var_name}),{struct_desc});\n}}\n""")
         c_file_content += (
             f"""void read_{var_name}(fprotocol_handler *handler,uint16_t node)\n{{
-    fprotocol_write(handler, node, SERVICE_REQUEST_READ, {index}, &{var_name}, sizeof({var_name}),{struct_desc});\n}}\n""")
+    fprotocol_write(handler, node, SERVICE_REQUEST_READ, {index}, &{var_name}, 0,{struct_desc});\n}}\n""")
 
     c_file_content += f"fprotocol_get_index_info_t {file_name.lower()}_index_info = {file_name.lower()}_fprotocol_get_index_info;"
 

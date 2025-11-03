@@ -8,3 +8,18 @@ __version__ = "1.0.0"
 __author__ = "FishROS Team"
 __email__ = ""
 
+from .fprotocol import (
+    DynamicStruct,
+    BaseValue,
+    FProtocol,
+    FProtocolType,
+    FProtocolHeader,
+)
+
+__all__ = [
+    'DynamicStruct',
+    'BaseValue',
+    'FProtocol',
+    'FProtocolType',
+    'FProtocolHeader',
+]

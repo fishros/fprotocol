@@ -15,7 +15,7 @@ import fprotocol
 # 串口配置
 SERIAL_PORT = 'COM14'  # Windows串口号，Linux/Mac使用 '/dev/ttyUSB0' 或类似
 BAUD_RATE = 115200
-TIMEOUT = 0.1  # 改为100ms，确保数据接收完整
+TIMEOUT = 1  # 改为100ms，确保数据接收完整
 
 # 初始化串口
 try:
@@ -28,7 +28,7 @@ except serial.SerialException as e:
 
 handler = None
 last_led_write_time = time.time()
-led_write_interval = 0.25
+led_write_interval = 1
 led_state = False
 
 def read_callback():
@@ -37,6 +37,7 @@ def read_callback():
     try:
         if ser.in_waiting > 0:
             data = ser.read(ser.in_waiting)
+            print(f"串口读取数据: {data.hex(' ')}")
             return data
         return None
     except serial.SerialException as e:
@@ -60,12 +61,20 @@ robot_proto = RobotProto()
 robot_proto.led = 0  # 初始LED状态为关闭
 
 # 添加ESP32节点
+handler.set_self_node(0x0002, robot_proto)
 handler.add_other_node(0x0001, robot_proto)
 
 print(f"串口服务端启动，端口: {SERIAL_PORT}")
 print("等待ESP32连接...")
 print("服务端将每0.3秒发送一次LED状态（闪烁）")
 print("-" * 50)
+
+
+def led_callback(type, from_node, error_code):
+    print(f"LED状态: {robot_proto.led}",type)
+    return 0
+
+robot_proto.led.callback = led_callback
 
 try:
     while True:
@@ -79,6 +88,9 @@ try:
             robot_proto.write_led(handler, FProtocolType.TRANSPORT_DATA, 0x0001)
             last_led_write_time = time.time()
             print(f"[LED Write] 发送LED状态: {'开启' if led_state else '关闭'}")
+            robot_proto.read_led(handler, 0x0001)
+            last_led_write_time = time.time()
+            print(f"[LED Read] 读取LED状态: {'开启' if led_state else '关闭'}")
         
         time.sleep(0.001)
         

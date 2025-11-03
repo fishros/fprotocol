@@ -151,6 +151,18 @@ def generate_python_code(input_file, output_directory):
     for struct_name,struct in struct_maps.items():
         content += struct2class(struct_name,struct)   
 
+    # 定义类型映射字典（在使用前定义）
+    type2struct = {
+        'uint32_t': "I",
+        'uint8_t': "B",
+        'int32_t': "i",
+        'int16_t': "h",
+        'uint16_t': "H",
+        'int8_t': "b",
+        'float': "f",
+        'double': "d",
+        'char': "c"
+    }
 
     sum_content = f"class {file_name}Proto:\n"
 
@@ -166,35 +178,38 @@ def generate_python_code(input_file, output_directory):
         if data_type in struct_maps.keys():
             sum_content += f'\n        self.{var_name} = DynamicStruct(self.{data_type}_desc)'
         else:
-            sum_content += f'\n        self.{var_name} = {get_default_values(data_type,0)}'
+            # 为基础类型创建 BaseValue 包装对象
+            default_val = get_default_values(data_type, 0)
+            format_char = type2struct.get(data_type, "B")
+            sum_content += f'\n        self.{var_name} = BaseValue({default_val}, "{format_char}")'
         sum_content += f'\n        self.index_table[{addr}] = self.{var_name}'
 
 
     sum_content += f'\n\n    def get_index_data(self,index):'
     sum_content += f'\n        return self.index_table[index]'
-
-
-    type2struct = {
-            'uint32_t': "I",
-            'uint8_t': "B",
-            'int32_t': "i",
-            'int16_t': "h",
-            'uint16_t': "H",
-            'int8_t': "b",
-            'float': "f",
-            'double': "d",
-            'char': "c"
-        }
+    
+    # 添加 __setattr__ 以支持直接赋值（如 obj.led = 1），保持 BaseValue 对象
+    sum_content += f'\n\n    def __setattr__(self, name, value):'
+    sum_content += f'\n        # 如果属性是 BaseValue 且已存在，则更新其值而不是替换对象'
+    sum_content += f'\n        if hasattr(self, name) and isinstance(getattr(self, name), BaseValue):'
+    sum_content += f'\n            getattr(self, name).value = value'
+    sum_content += f'\n        else:'
+    sum_content += f'\n            object.__setattr__(self, name, value)'
 
     for addr, data_type, var_name, callback_flag in data_list:
         sum_content += f'\n\n    def write_{var_name}(self,fprotocol,type,node):'
         if data_type in struct_maps.keys():
             sum_content += f'\n        bytes_data = self.{var_name}.to_bytes()'
         else:
-            sum_content += f'\n        bytes_data = struct.pack("{type2struct[data_type]}",self.{var_name})'
+            # 基础类型也使用 to_bytes() 方法
+            sum_content += f'\n        bytes_data = self.{var_name}.to_bytes()'
         sum_content += f'\n        fprotocol.fprotocol_write(node,type,{addr},bytes_data,len(bytes_data))'
+    
+    for addr, data_type, var_name, callback_flag in data_list:
+        sum_content += f'\n\n    def read_{var_name}(self,fprotocol,node):'
+        sum_content += f'\n        fprotocol.fprotocol_write(node,FProtocolType.SERVICE_REQUEST_READ,{addr},[],0)'
 
-    sum_content = 'import struct\nfrom fprotocol import DynamicStruct\n' + sum_content
+    sum_content = 'import struct\nfrom fprotocol import DynamicStruct,FProtocolType,BaseValue\n' + sum_content
 
     # 保存到文件
     print(sum_content)

@@ -30,6 +30,9 @@ setup(
     url="https://github.com/your-username/fprotocol",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
+    package_data={
+        "fprotocol": ["fprotocol.h", "fprotocol.c"],
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",

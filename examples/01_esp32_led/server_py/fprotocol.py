@@ -59,51 +59,16 @@ class DynamicStruct:
                     index+= field_size
 
     def to_bytes(self) -> bytes:
-        # 首先自动设置所有_size字段
-        for field_name, fmt, _ in self.fields:
-            if field_name.endswith("_size"):
-                # 找到对应的数据字段
-                data_field_name = field_name[1:-5]  # 去掉_和_size
-                data_val = self.values.get(data_field_name)
-                if data_val is not None:
-                    if isinstance(data_val, str):
-                        data_val = data_val.encode()
-                    actual_len = len(data_val)
-                    
-                    # 获取字段定义中的最大长度
-                    max_len = 0
-                    for fname, fmt, _ in self.fields:
-                        if fname == data_field_name:
-                            if fmt.endswith('s'):
-                                max_len = int(fmt[:-1])  # 去掉's'获取数字
-                            break
-                    
-                    # 如果数据超过最大长度，进行截断
-                    if max_len > 0 and actual_len > max_len:
-                        data_val = data_val[:max_len]
-                        actual_len = max_len
-                        # 更新values中的实际数据
-                        self.values[data_field_name] = data_val
-                    
-                    # 只有当_size字段为0时才自动设置
-                    current_size = self.values.get(field_name, 0)
-                    if current_size == 0:
-                        self.values[field_name] = actual_len
-        
         packed = bytearray()
         next_array_size = 0
         for field_name, fmt,_ in self.fields:
             val = self.values.get(field_name)
             
             if field_name.startswith("_"):
-                # 对于_size字段，我们已经在上面的循环中设置了值
-                if field_name.endswith("_size"):
-                    packed += struct.pack(fmt, val)
-                    next_array_size = val
-                else:
-                    # 普通字段，打包并记录大小供下个字段使用
-                    packed += struct.pack(fmt, val)
-                    next_array_size = val
+                # 普通字段，打包并记录大小供下个字段使用
+                # print("field_name",field_name,fmt,val)
+                packed += struct.pack(fmt, val)
+                next_array_size = val
             else:
                 if next_array_size:
                     # 使用前面的字段长度生成动态格式
@@ -112,26 +77,14 @@ class DynamicStruct:
                     if fmt_type == "s":
                         if isinstance(val, str):
                             val = val.encode()
-                        # 不填充0，直接使用实际数据
-                        actual_len = len(val)
-                        if actual_len > next_array_size:
-                            val = val[:next_array_size]  # 截断超长数据
-                        else:
-                            # 不填充0，使用实际长度
-                            dynamic_fmt = f"{actual_len}{fmt_type}"
+                        val = val.ljust(next_array_size, b'\x00')
                     packed += struct.pack(dynamic_fmt, val)
                     next_array_size = 0
                 else:
                     # 非变长字段，正常处理
                     if fmt.endswith("s") and isinstance(val, str):
                         val = val.encode()
-                        # 去掉填充0
-                        actual_len = len(val)
-                        if actual_len > int(fmt[:-1]):
-                            val = val[:int(fmt[:-1])]  # 截断超长数据
-                        else:
-                            # 不填充0，使用实际长度
-                            fmt = f"{actual_len}s"
+                        val = val.ljust(int(fmt[:-1]), b'\x00')
                     packed += struct.pack(fmt, val)
         return bytes(packed)
 
@@ -161,6 +114,89 @@ class DynamicStruct:
                 value = value.hex()
             json_data[field_name] = value
         return json_data
+
+
+class BaseValue:
+    """基础类型包装类，提供 callback 支持和统一接口"""
+    def __init__(self, value, format_char):
+        self._value = value
+        self._format = format_char
+        self.callback = None
+    
+    @property
+    def value(self):
+        return self._value
+    
+    @value.setter
+    def value(self, val):
+        self._value = val
+    
+    def parse(self, data: bytes):
+        """从字节数据解析值"""
+        self._value = struct.unpack(self._format, data[:struct.calcsize(self._format)])[0]
+        return struct.calcsize(self._format)
+    
+    def to_bytes(self) -> bytes:
+        """将值转换为字节数据"""
+        return struct.pack(self._format, self._value)
+    
+    def __int__(self):
+        return int(self._value)
+    
+    def __float__(self):
+        return float(self._value)
+    
+    def __str__(self):
+        return str(self._value)
+    
+    def __repr__(self):
+        return repr(self._value)
+    
+    def __eq__(self, other):
+        if isinstance(other, BaseValue):
+            return self._value == other._value
+        return self._value == other
+    
+    def __ne__(self, other):
+        return not self.__eq__(other)
+    
+    def __lt__(self, other):
+        if isinstance(other, BaseValue):
+            return self._value < other._value
+        return self._value < other
+    
+    def __le__(self, other):
+        if isinstance(other, BaseValue):
+            return self._value <= other._value
+        return self._value <= other
+    
+    def __gt__(self, other):
+        if isinstance(other, BaseValue):
+            return self._value > other._value
+        return self._value > other
+    
+    def __ge__(self, other):
+        if isinstance(other, BaseValue):
+            return self._value >= other._value
+        return self._value >= other
+    
+    # 支持直接赋值，如 obj.led = 1
+    def __setattr__(self, name, value):
+        if name in ('_value', '_format', 'callback') and '_value' in self.__dict__:
+            if name == '_value':
+                object.__setattr__(self, '_value', value)
+            elif name == 'callback':
+                object.__setattr__(self, 'callback', value)
+            else:
+                object.__setattr__(self, name, value)
+        else:
+            object.__setattr__(self, name, value)
+    
+    # 支持直接获取值（向后兼容）
+    def __getattr__(self, name):
+        if name == 'value':
+            return self._value
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
 
 class CircularBuffer:
@@ -254,7 +290,7 @@ class FProtocol:
         self.self_node_proto = None  # 自己的协议对象
         self.read_callback = read_callback
         self.write_callback = write_callback
-        self.rxbuff = CircularBuffer(20480)
+        self.rxbuff = CircularBuffer(2048)
         self.frame = {
             'recv_size': 0,
             'data': [],
@@ -286,34 +322,18 @@ class FProtocol:
         return self.fprotocol_write(target_node, FProtocolType.HEART_PING, 0, [])
 
     def tick(self):
-        # 批量读取数据，提高性能
         if self.read_callback:
             data = self.read_callback()
             if data:
                 self.rxbuff.put(data)
-                logging.debug(f"put {list(data)} {self.rxbuff.size()}")
+                logging.debug("put",list(data),self.rxbuff.size())
         
-        # 批量处理多个数据包
-        processed_packets = 0
-        max_packets_per_tick = 200  # 每次tick最多处理20个包
-        
-        while processed_packets < max_packets_per_tick and self.rxbuff.size() > 0:
-            # 尝试处理一个完整的数据包
-            if self._process_single_packet():
-                processed_packets += 1
-            else:
-                # 如果没有完整包可处理，退出循环
-                break
-    
-    def _process_single_packet(self):
-        """处理单个数据包，返回True表示成功处理了一个包"""
-        # 帧头检测
         if self.frame['recv_size'] < 4:
-            available_data = self.rxbuff.get(min(4 - self.frame['recv_size'], self.rxbuff.size()))
-            if available_data == -1:
-                return False
-            
-            for rdata in available_data:
+            while self.frame['recv_size'] < 4:
+                rdata = self.rxbuff.get(1)
+                if rdata == -1:
+                    break
+                rdata = rdata[0]
                 if rdata == FProtocol.FRAME_HEAD[self.frame['recv_size']]:
                     self.frame['data'].append(rdata)
                     self.frame['recv_size'] += 1
@@ -322,21 +342,18 @@ class FProtocol:
                     self.frame['recv_size'] = 1
                 else:
                     self.frame['recv_size'] = 0
-                    self.frame['data'] = []
         
-        # 读取头部信息
         if self.frame['recv_size'] >= 4 and self.frame['recv_size'] < 11:
             additional_data = self.rxbuff.get(11 - self.frame['recv_size'])
             if additional_data == -1:
-                return False
+                return
             self.frame['data'].extend(additional_data)
             self.frame['recv_size'] = len(self.frame['data'])
             if self.frame['recv_size'] != 11:
-                return False
+                return
             header = self.parse_header(self.frame['data'][4:11])
-            self.frame['header'] = header
+            self.frame['header']  = header
             logger.debug(f"header={header}")
-            
             if header.node == self.self_node_id:
                 logger.debug(f"Recv data from self node {header.node}")
             elif header.node in self.other_nodes.keys():
@@ -345,6 +362,8 @@ class FProtocol:
                     self.frame['fdata'] = None
                     logger.debug(f"Recv data from node {self.frame['header'].node} data_size={self.frame['header'].data_size}")
                 else:
+                    # fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
+                    # self.frame['fdata'] = fdata
                     if header.type == FProtocolType.SERVICE_RESPONSE_ERROR:
                         self.frame['data_size'] = self.frame['header'].data_size  # 2
                     elif header.type == FProtocolType.SERVICE_REQUEST_WRITE:
@@ -355,44 +374,36 @@ class FProtocol:
                         self.frame['data_size'] = self.frame['header'].data_size 
                     else:
                         self.frame['recv_size'] = 0 # 重新接收
+                # print(self.frame['recv_size'],self.frame['data_size'])
             else:
                 self.frame['recv_size'] = 0
-                return False
                 
-        # 读取数据部分
         if self.frame['recv_size'] >= 11 and self.frame['recv_size'] < (11 + self.frame['data_size']):
             additional_data = self.rxbuff.get(self.frame['data_size'])
             if additional_data == -1:
-                return False
+                return
             self.frame['data'].extend(additional_data)
             self.frame['recv_size'] = len(self.frame['data'])
             logger.debug(f"Recv data from node {self.frame['header'].node} data_size={self.frame['data_size']}")
+            # print()
         
-        # 读取校验和并处理完整包
         if self.frame['recv_size'] >= (11 + self.frame['data_size']):
             checksum_data = self.rxbuff.get(2) # checksum
             if checksum_data == -1:
-                return False
-            
+                return
+            # print("self.frame['recv_size']",self.frame['recv_size'],self.frame['data'],checksum_data)
             calculated_checksum = self.checksum16(self.frame['data'])
             received_checksum = checksum_data[0] << 8 | checksum_data[1]
             if calculated_checksum == received_checksum:
                 if self.frame['header'].type == FProtocolType.SERVICE_RESPONSE_ERROR:
                     self.frame['error_code'] = self.frame['data'][11] << 8 | self.frame['data'][12]
                 self.process_frame(self.frame)  
-                # 成功处理了一个包
-                self.frame['data'].clear()
-                self.frame['recv_size'] = 0
-                return True
-            else:
-                # 校验失败，重置
-                self.frame['recv_size'] = 0
-                return False
-                
+
+            self.frame['data'].clear()
+            self.frame['recv_size'] = 0
+            # print("self.frame['recv_size']",self.frame['recv_size'])
         if self.frame['recv_size'] > 1024:
             self.frame['recv_size'] = 0
-            
-        return False
 
 
     def process_frame(self, frame):
@@ -414,7 +425,7 @@ class FProtocol:
                 fdata.parse(bytes(frame['data'][11:]))
 
             if fdata and fdata.callback:
-                fdata.callback(header.type, header.node, frame['error_code'])
+                fdata.callback(header.type, fdata, frame['error_code'])
 
 
     def fprotocol_write(self, node, type, index, data, data_size=0):
