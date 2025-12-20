@@ -30,3 +30,9 @@ example_proto.py
 example_proto.c
 example_proto.cpp
 example_proto.h
+
+
+build/
+install/
+log/
+*.log

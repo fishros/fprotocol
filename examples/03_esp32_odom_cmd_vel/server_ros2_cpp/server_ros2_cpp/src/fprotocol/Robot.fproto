@@ -1,0 +1,10 @@
+# 数据结构定义部分
+#数据结构名称,包含类型，名称,数据长度
+float3d_t,float,x,
+float3d_t,float,y,
+float3d_t,float,z,
+---
+# 地址 , 类型    ,  变量名,  ,是否回调
+0x0001,uint8_t,led,1
+0x0002,float3d_t,odom,1 # x,y位置，yaw角度
+0x0003,float3d_t,cmd_vel,1 # x,y 两个方向的速度，z是yaw原地旋转速度
