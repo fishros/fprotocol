@@ -1,0 +1,36 @@
+# 数据结构定义部分
+#数据结构名称,包含类型，名称,数据长度
+float3d_t,float,x,
+float3d_t,float,y,
+float3d_t,float,z,
+data_t,float,temp,
+data_t,float,hum,
+data_t,uint8_t,ladc,
+data_t,uint8_t,badc,
+imu_t,float,x,
+imu_t,float,y,
+imu_t,float,z,
+imu_t,float,acc_x,
+imu_t,float,acc_y,
+imu_t,float,acc_z,
+imu_t,float,gyro_x,
+imu_t,float,gyro_y,
+imu_t,float,gyro_z,
+---
+# 地址 , 类型    ,  变量名,  ,是否回调
+0x0001,uint8_t,ctrl_led,1
+0x0002,uint8_t,ctrl_beep,1
+0x0003,float3d_t,ctrl_vel,1 # x,y 两个方向的速度，z是yaw原地旋转速度
+0x0004,float3d_t,sensor_odom,0 # x,y位置，yaw角度
+0x0005,data_t,sensor_board,1 #设备数据
+0x0006,imu_t,sensor_imu,0 #imu数据
+0x0101,uint8_t,config_odom_hz,1 # 里程计数据上传频率
+0x0102,uint8_t,config_imu_hz,1 # IMU数据上传频率
+0x0103,uint8_t,config_sensor_hz,1 # 传感器上传频率
+---
+# ROS2消息接口与结构体映射关系
+# 地址,发布pub/订阅sub/参数param/服务service,ROS2消息接口，
+1,param,std_msgs/msg/Float32,param_ctrl_led
+3,sub,geometry_msgs/msg/Twist,sub_ctrl_vel
+4,pub,nav_msgs/msg/Odometry,pub_sensor_odom
+6,sub,sensor_msgs/msg/Imu,pub_sensor_imu

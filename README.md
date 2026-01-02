@@ -53,6 +53,9 @@ fprotocol_tool gencode example.fproto --type=cpp --out_dir=./output
 # 生成Python代码  
 fprotocol_tool gencode example.fproto --type=py --out_dir=./output
 
+
+fprotocol_tool gencode example.fproto --type=py_ros2 --out_dir=./output
+
 # 生成到当前目录
 fprotocol_tool gencode example.fproto --type=py --out_dir=.
 ```
@@ -96,4 +99,5 @@ canframe_t,uint8_t,data,8
 
 ## 许可证
 
-MIT License
+商业需授权
+

@@ -50,7 +50,14 @@ def generate_python_code(input_file, output_directory):
 
 
     # 解析输入文件
-    struct_definition_csv, csv_data = input_file_content.split('---')
+    parts = input_file_content.split('---')
+    if len(parts) >= 2:
+        struct_definition_csv = parts[0]
+        csv_data = parts[1]
+    else:
+        # 如果只有一个部分，假设没有结构定义
+        struct_definition_csv = ""
+        csv_data = parts[0] if parts else ""
 
     # 解析CSV内容
     csv_reader = csv.reader(csv_data.strip().splitlines())
@@ -58,7 +65,7 @@ def generate_python_code(input_file, output_directory):
     struct_list = list(csv.reader(struct_definition_csv.strip().splitlines()))
     content = ""
 
-    def get_type_str_len(stype,len):
+    def get_type_str_len(stype,length):
         type2struct = {
             'uint32_t': "I",
             'uint8_t': "B",
@@ -81,8 +88,8 @@ def generate_python_code(input_file, output_directory):
             'double': 8,
             'char': 1
         }
-        if len:
-            len_int = int(len)  # 确保len是整数
+        if length:
+            len_int = int(length)  # 确保length是整数
             if stype == 'uint8_t':
                 return f'{len_int}s', len_int
             elif stype == 'char':
@@ -92,7 +99,7 @@ def generate_python_code(input_file, output_directory):
         else:
             return type2struct[stype], type2len[stype]
         
-    def get_default_values(stype,len):
+    def get_default_values(stype,length):
         type2defaultv = {
             'uint32_t': 0,
             'uint8_t': 0,
@@ -104,8 +111,8 @@ def generate_python_code(input_file, output_directory):
             'double': 0.0,
             'char': "b'\x00'"
         }
-        if len:
-            len_int = int(len)  # 确保len是整数
+        if length:
+            len_int = int(length)  # 确保length是整数
             if stype == 'uint8_t':
                 return """b'\\x00' * """ + str(len_int)
             elif stype == 'char':
@@ -119,14 +126,19 @@ def generate_python_code(input_file, output_directory):
 
     struct_maps = {}
     for row in struct_list:
-        struct_name,ttype,name,len = row
-        len = len.strip()
+        if len(row) < 3:
+            continue  # 跳过不完整的行
+        struct_name, ttype, name = row[0], row[1], row[2]
+        length = row[3] if len(row) > 3 else ""
+        
+        length = length.strip()
         struct_name = struct_name.strip()
         ttype = ttype.strip()
         name = name.strip()
+        
         if struct_name not in struct_maps.keys():
             struct_maps[struct_name] = []
-        struct_maps[struct_name].append((ttype,name,len))
+        struct_maps[struct_name].append((ttype, name, length))
 
     def struct2class(struct_name, struct):
         # ==============计算 len 和 str================
@@ -134,15 +146,15 @@ def generate_python_code(input_file, output_directory):
         struct_str = ''
         desc_str = ""
         desc_str += f"{struct_name}_desc = ["
-        for ttype, name, len in struct:
-            # print(ttype, name, len)
-            type_str, type_len = get_type_str_len(ttype, int(len) if len else None)
-            if len:
-                len_int = int(len)
+        for ttype, name, length in struct:
+            # print(ttype, name, length)
+            type_str, type_len = get_type_str_len(ttype, int(length) if length else None)
+            if length:
+                len_int = int(length)
                 print(f"_{name}_size","H")
                 desc_str += f'("_{name}_size","H",0),'  # 设置为0，让DynamicStruct自动设置
             print(name, type_str)
-            desc_str += f'("{name}","{type_str}",{get_default_values(ttype,len)}),'
+            desc_str += f'("{name}","{type_str}",{get_default_values(ttype,length)}),'
         print(desc_str)
         # desc_str[-1] = ']'
         desc_str = desc_str[:-1] + "]\n"

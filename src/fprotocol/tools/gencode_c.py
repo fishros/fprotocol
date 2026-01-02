@@ -332,12 +332,20 @@ def generate_c_code(input_file, output_directory, code_type='c'):
 
 def main():
     """命令行入口点"""
-    if len(sys.argv) != 3:
-        print("Usage: python gen_code.py <input_file> <output_directory>")
+    if len(sys.argv) < 3 or len(sys.argv) > 4:
+        print("Usage: python gencode_c.py <input_file> <output_directory> [code_type]")
+        print("  code_type: 'c' for C code (default), 'cpp' for C++ code")
         sys.exit(1)
+    
     input_file = sys.argv[1]
     output_directory = sys.argv[2]
-    generate_c_code(input_file, output_directory)
+    code_type = sys.argv[3] if len(sys.argv) == 4 else 'c'
+    
+    if code_type not in ['c', 'cpp']:
+        print("Error: code_type must be 'c' or 'cpp'")
+        sys.exit(1)
+    
+    generate_c_code(input_file, output_directory, code_type)
 
 
 if __name__ == "__main__":
