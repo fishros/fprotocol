@@ -81,11 +81,14 @@ static std::shared_ptr<FProtocol::StructDescriptor> {base_type}_desc =
 
 def copy_fprotocol_files(output_directory, code_type):
     """拷贝fprotocol相关文件到输出目录"""
+    # 获取当前脚本的目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
     # 尝试多个可能的源文件位置
     possible_roots = [
-        os.getcwd(),  # 当前工作目录（开发环境）
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),  # 相对于此脚本的位置
-        os.path.dirname(os.path.dirname(__file__)),  # fprotocol包目录
+        # 从脚本位置向上查找项目根目录
+        os.path.dirname(os.path.dirname(os.path.dirname(script_dir))),  # 项目根目录
+        os.getcwd(),  # 当前工作目录
     ]
     
     # 尝试从包中导入来获取包的位置
@@ -95,7 +98,7 @@ def copy_fprotocol_files(output_directory, code_type):
         possible_roots.insert(0, package_dir)  # 优先使用包目录
         print(f"找到fprotocol包目录: {package_dir}")
     except ImportError:
-        print("未找到已安装的fprotocol包")
+        print("未找到已安装的fprotocol包，尝试从项目目录查找")
     
     src_h = None
     src_cpp = None
@@ -105,32 +108,43 @@ def copy_fprotocol_files(output_directory, code_type):
         print(f"尝试根目录: {root}")
         
         if code_type == 'cpp':
-            test_h = os.path.join(root, 'fprotocol.hpp')
-            test_cpp = os.path.join(root, 'fprotocol.cpp')
+            # 首先尝试src/fprotocol子目录
+            test_h = os.path.join(root, 'src', 'fprotocol', 'fprotocol.hpp')
+            test_cpp = os.path.join(root, 'src', 'fprotocol', 'fprotocol.cpp')
+            
+            # 如果不存在，尝试根目录
             if not os.path.exists(test_h):
-                # 尝试src子目录
-                test_h = os.path.join(root, 'src', 'fprotocol', 'fprotocol.hpp')
-                test_cpp = os.path.join(root, 'src', 'fprotocol', 'fprotocol.cpp')
+                test_h = os.path.join(root, 'fprotocol.hpp')
+                test_cpp = os.path.join(root, 'fprotocol.cpp')
         else:
+            # 首先尝试根目录的C文件
             test_h = os.path.join(root, 'fprotocol.h')
             test_cpp = os.path.join(root, 'fprotocol.c')
+            
+            # 如果不存在，尝试src子目录
             if not os.path.exists(test_h):
-                # 尝试src子目录
                 test_h = os.path.join(root, 'src', 'fprotocol', 'fprotocol.h')
                 test_cpp = os.path.join(root, 'src', 'fprotocol', 'fprotocol.c')
+        
+        print(f"  检查文件: {test_h}")
+        print(f"  检查文件: {test_cpp}")
         
         if os.path.exists(test_h) and os.path.exists(test_cpp):
             src_h = test_h
             src_cpp = test_cpp
             print(f"找到源文件: {src_h}")
+            print(f"找到源文件: {src_cpp}")
             break
+        else:
+            print(f"  文件不存在")
     
     if not src_h or not src_cpp:
         print("错误: 无法找到fprotocol源文件")
         print("请确保:")
         print("1. 在fprotocol项目根目录下运行")
         print("2. 或者已正确安装fprotocol包")
-        return
+        print("3. 或者确保src/fprotocol/目录下有相应的源文件")
+        return False
     
     # 设置目标文件路径
     if code_type == 'cpp':
@@ -146,8 +160,10 @@ def copy_fprotocol_files(output_directory, code_type):
         
         shutil.copy2(src_cpp, dst_cpp)
         print(f"已拷贝 {os.path.basename(dst_cpp)} 到 {output_directory}")
+        return True
     except Exception as e:
         print(f"拷贝文件时出错: {e}")
+        return False
 
 def generate_c_code(input_file, output_directory, code_type='c'):
     """生成C/C++代码的主函数"""
@@ -171,11 +187,13 @@ def generate_c_code(input_file, output_directory, code_type='c'):
 
     # 解析输入文件
     parts = input_file_content.split('---')
-    if len(parts) == 2:
-        struct_definition_csv, csv_data = parts
+    if len(parts) >= 2:
+        struct_definition_csv = parts[0]
+        csv_data = parts[1]
     else:
+        # 如果只有一个部分，假设没有结构定义
         struct_definition_csv = ""
-        csv_data = parts[0]
+        csv_data = parts[0] if parts else ""
     
     print(f"CSV数据: {csv_data}")
     
@@ -406,7 +424,12 @@ def generate_c_code(input_file, output_directory, code_type='c'):
         save_to_file(f"{output_directory}/{file_name}Proto.cpp", c_file_content)
     
     # 拷贝fprotocol相关文件
-    copy_fprotocol_files(output_directory, code_type)
+    copy_success = copy_fprotocol_files(output_directory, code_type)
+    
+    if copy_success:
+        print(f"成功生成{'面向对象C++' if is_cpp else 'C'}代码到: {output_directory}")
+    else:
+        print(f"代码生成完成，但fprotocol源文件拷贝失败。请手动拷贝fprotocol.{'hpp' if is_cpp else 'h'}和fprotocol.{'cpp' if is_cpp else 'c'}文件到输出目录。")
 
 def main():
     """命令行入口点"""

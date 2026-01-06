@@ -66,13 +66,15 @@ def generate_ros2_imports(mappings):
     for mapping in mappings:
         msg_type = mapping['msg_type']
         if '/' in msg_type:
-            package, msg_path = msg_type.split('/', 1)
-            if '/msg/' in msg_path:
-                msg_name = msg_path.split('/')[-1]
-                imports.add(f"from {package}.msg import {msg_name}")
-            elif '/srv/' in msg_path:
-                srv_name = msg_path.split('/')[-1]
-                imports.add(f"from {package}.srv import {srv_name}")
+            parts = msg_type.split('/')
+            if len(parts) == 3:  # 格式: package/msg/MessageName 或 package/srv/ServiceName
+                package, type_dir, type_name = parts
+                if type_dir == 'msg':
+                    import_stmt = f"from {package}.msg import {type_name}"
+                    imports.add(import_stmt)
+                elif type_dir == 'srv':
+                    import_stmt = f"from {package}.srv import {type_name}"
+                    imports.add(import_stmt)
     
     return sorted(list(imports))
 
@@ -435,11 +437,13 @@ from fprotocol import *
         ros2_imports = generate_ros2_imports(mappings)
         for imp in ros2_imports:
             content += imp + "\n"
+        content += "\n"  # 添加空行分隔
     else:
         # 基本的ROS2导入
         content += "import rclpy\n"
         content += "from rclpy.node import Node\n"
         content += "# from std_msgs.msg import String  # 示例消息类型，请根据需要修改\n"
+        content += "\n"  # 添加空行分隔
     
     # 生成节点类
     node_content, publishers, subscribers = generate_ros2_node_class(file_name, mappings, data_list)

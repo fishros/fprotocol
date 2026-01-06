@@ -171,12 +171,33 @@ def generate_c_code(input_file, output_directory, code_type='c'):
     input_file_content = re.sub(r'#.*', '', input_file_content)
 
     # 解析输入文件
-    struct_definition_csv, csv_data = input_file_content.split('---')
-    print(struct_definition_csv,csv_data)
+    parts = input_file_content.split('---')
+    if len(parts) >= 2:
+        struct_definition_csv = parts[0]
+        csv_data = parts[1]
+    else:
+        # 如果只有一个部分，假设没有结构定义
+        struct_definition_csv = ""
+        csv_data = parts[0] if parts else ""
+    
+    print(struct_definition_csv, csv_data)
     # 解析CSV内容
     csv_reader = csv.reader(csv_data.strip().splitlines())
-    data_list = list(csv_reader)
-    struct_list = list(csv.reader(struct_definition_csv.strip().splitlines()))
+    data_list = []
+    for row in csv_reader:
+        if len(row) >= 3:
+            # 清理每个字段的空白字符
+            row = [field.strip() for field in row]
+            # 确保有4列：index, data_type, var_name, callback_flag
+            while len(row) < 4:
+                row.append('0')  # 默认不回调
+            data_list.append(row)
+    
+    print(f"解析的数据列表: {data_list}")
+    
+    struct_list = []
+    if struct_definition_csv.strip():
+        struct_list = list(csv.reader(struct_definition_csv.strip().splitlines()))
     content = ""
 
     # =======================================================================================================================
@@ -191,26 +212,34 @@ def generate_c_code(input_file, output_directory, code_type='c'):
     struct_maps = {}
     index = 0
     for row in struct_list:
-        struct_name,ttype,name,len = row
-        len = len.strip()
+        if len(row) < 3:
+            continue  # 跳过不完整的行
+        struct_name, ttype, name = row[0], row[1], row[2]
+        length = row[3] if len(row) > 3 else ""
+        
+        length = length.strip()
+        struct_name = struct_name.strip()
+        ttype = ttype.strip()
+        name = name.strip()
+        
         if struct_name not in struct_maps.keys():
             struct_maps[struct_name] = []
             index = -1
-        if len:
+        if length:
             new_name = f"_{name}_size"
-            struct_maps[struct_name].append(('uint16_t',new_name,None,None))
-            index+=1
-            struct_maps[struct_name].append((ttype,name,len,index))
-            index+=1
+            struct_maps[struct_name].append(('uint16_t', new_name, None, None))
+            index += 1
+            struct_maps[struct_name].append((ttype, name, length, index))
+            index += 1
             continue
-        index+=1
-        struct_maps[struct_name].append((ttype,name,len,None))
+        index += 1
+        struct_maps[struct_name].append((ttype, name, length, None))
 
     def struc2cdef(struct_name, struct):
         astr = 'typedef struct {\n'
-        for ttype, name, len ,size_index in struct:
-            if len:
-                astr += f'    {ttype} {name}[{len}];\n'
+        for ttype, name, length, size_index in struct:
+            if length:
+                astr += f'    {ttype} {name}[{length}];\n'
             else:
                 astr += f'    {ttype} {name};\n'
         astr += f'}} __attribute__((packed))  {struct_name};'
@@ -222,18 +251,20 @@ def generate_c_code(input_file, output_directory, code_type='c'):
     print(h_file_content)
 
     for row in data_list:
-        index, data_type, var_name, callback_flag = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         h_file_content += f"extern {data_type} {var_name}; /*Index: {index} */\n"
 
     for row in data_list:
-        index, data_type, var_name, callback_flag = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
+        # 清理callback_flag，只取第一个字符
+        callback_flag = callback_flag[0] if callback_flag else '0'
         if callback_flag == '1':
             h_file_content += (
                 f"int16_t callback_{var_name}(uint16_t type, uint32_t from, uint16_t error_code);\n"
             )
 
     for row in data_list:
-        index, data_type, var_name, callback_flag = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         h_file_content += (
             f"void write_{var_name}(fprotocol_handler *handler,uint16_t node,uint8_t response);\n"
             f"void read_{var_name}(fprotocol_handler *handler,uint16_t node);\n"
@@ -255,7 +286,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
 
     # 定义变量
     for row in data_list:
-        _, data_type, var_name, _ = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         c_file_content += f"{data_type} {var_name};\n"
 
     for struct_name,structs in struct_maps.items():
@@ -266,7 +297,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
 
     data_types_array = {}
     for row in data_list:
-        index, data_type, var_name, _ = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         if data_type not in struct_maps.keys():
             data_types_array[data_type] = None
         print(data_types_array.keys())
@@ -276,7 +307,9 @@ def generate_c_code(input_file, output_directory, code_type='c'):
     # 定义数据表
     c_file_content += "\nfprotocol_data data_table[] = {\n"
     for i, row in enumerate(data_list):
-        index, data_type, var_name, callback_flag = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
+        # 清理callback_flag，只取第一个字符
+        callback_flag = callback_flag[0] if callback_flag else '0'
         callback_function = f"callback_{var_name}" if callback_flag == '1' else "NULL"
         struct_desc = f"&{data_type}_desc" if data_type in struct_maps.keys() else f"&{data_type}_desc"
         # print(data_type,struct_maps)
@@ -289,7 +322,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
     c_file_content += f"fprotocol_data *{file_name.lower()}_fprotocol_get_index_info(uint16_t index)\n"
     c_file_content += "{\n    switch (index)\n    {\n"
     for i, row in enumerate(data_list):
-        index, _, _, _ = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         c_file_content += f"    case {index}:\n        return &data_table[{i}];\n        break;\n"
     c_file_content += "    default:\n        break;\n    }\n    return NULL;\n}\n"
 
@@ -297,7 +330,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
 
     # 读取写入函数生成
     for row in data_list:
-        index, data_type, var_name, callback_flag = row
+        index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         struct_desc  = "NULL" if index2struct_desc[index] == 'NULL' else f"{index2struct_desc[index]}" 
         c_file_content += (
             f"""void write_{var_name}(fprotocol_handler *handler,uint16_t node,uint8_t response)\n{{
