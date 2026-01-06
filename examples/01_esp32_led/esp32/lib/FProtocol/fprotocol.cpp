@@ -443,9 +443,9 @@ void fprotocol_set_self_node(fprotocol_handler *handler, uint8_t node, fprotocol
     handler->fprotocol_get_node_info = get_index_info;
 }
 
-int8_t fprotocol_heart_ping(fprotocol_handler *handler)
+int8_t fprotocol_heart_ping(fprotocol_handler *handler, uint16_t target_node)
 {
-    return fprotocol_write(handler, handler->self_node_id, HEART_PING, 0, NULL, 0, NULL) > 0;
+    return fprotocol_write(handler, target_node, HEART_PING, 0, NULL, 0, NULL) > 0;
 }
 
 int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*callback)(uint16_t node))

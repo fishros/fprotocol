@@ -452,8 +452,8 @@ uint16_t Handler::write(uint16_t node, ProtocolType type, uint16_t index,
     return write_func_(node, send_buff, 11 + size + 2);
 }
 
-int8_t Handler::heartPing() {
-    return write(self_node_id_, ProtocolType::HEART_PING, 0, nullptr, 0) > 0;
+int8_t Handler::heartPing(uint8_t target_node) {
+    return write(target_node, ProtocolType::HEART_PING, 0, nullptr, 0) > 0;
 }
 
 void Handler::setHeartPingCallback(HeartPingCallback callback) {

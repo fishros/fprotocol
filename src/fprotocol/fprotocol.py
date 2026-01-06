@@ -4,7 +4,7 @@ logging.basicConfig(
     format='%(levelname)s:%(filename)s:%(funcName)s:%(lineno)d->%(message)s',
 )
 logger = logging.getLogger(__name__)
-
+# logger.setLevel(logging.DEBUG)
 
 import struct
 
@@ -356,9 +356,7 @@ class FProtocol:
             header = self.parse_header(self.frame['data'][4:11])
             self.frame['header']  = header
             logger.debug(f"header={header}")
-            if header.to == self.self_node_id:
-                logger.debug(f"Recv data for self node {header.to}")
-            elif header.from_node in self.other_nodes.keys():
+            if header.from_node in self.other_nodes.keys() and header.to == self.self_node_id:
                 if header.type == FProtocolType.HEART_PING:
                     self.frame['data_size'] = 0
                     self.frame['fdata'] = None
@@ -386,7 +384,7 @@ class FProtocol:
                 return
             self.frame['data'].extend(additional_data)
             self.frame['recv_size'] = len(self.frame['data'])
-            logger.debug(f"Recv data from node {self.frame['header'].node} data_size={self.frame['data_size']}")
+            logger.debug(f"Recv data from node {self.frame['header'].from_node} data_size={self.frame['data_size']}")
             # print()
         
         if self.frame['recv_size'] >= (11 + self.frame['data_size']):

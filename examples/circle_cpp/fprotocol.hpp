@@ -174,7 +174,7 @@ public:
                    std::shared_ptr<StructDescriptor> desc = nullptr);
     
     // Utility functions
-    int8_t heartPing();
+    int8_t heartPing(uint8_t target_node);
     ProtocolData* getOtherNodeData(uint16_t node, uint16_t index);
     
     // Static utility functions

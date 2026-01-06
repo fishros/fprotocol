@@ -136,7 +136,7 @@ void loop() {
   // 发送心跳包
   unsigned long current_time = millis();
   if (current_time - last_heartbeat_time >= heartbeat_interval) {
-    fprotocol_heart_ping(fprotocol_handler_ptr); // 发送心跳包
+    fprotocol_heart_ping(fprotocol_handler_ptr, 0x01); // 发送心跳包
     last_heartbeat_time = current_time;
     Serial.println("[Heartbeat] Sent heartbeat to server");
   }

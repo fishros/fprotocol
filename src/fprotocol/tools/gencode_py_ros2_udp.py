@@ -106,6 +106,7 @@ class {class_name}(Node):
         self.{file_name.lower()}_proto = {file_name}Proto()
         
         # 设置协议节点
+        self.handler.set_self_node(0x02, self.{file_name.lower()}_proto)
         self.handler.add_other_node(0x0001, self.{file_name.lower()}_proto)
 """
     
@@ -164,7 +165,7 @@ class {class_name}(Node):
 """
         for addr, data_type, var_name, callback_flag in data_list:
             if len(callback_flag) > 0 and callback_flag[0] == '1':
-                content += f"        # self.{file_name.lower()}_proto.{var_name}.callback = self.{var_name}_callback\n"
+                content += f"        self.{file_name.lower()}_proto.{var_name}.callback = self.{var_name}_callback\n"
     
     # 添加定时器和示例控制逻辑
     if not mappings:

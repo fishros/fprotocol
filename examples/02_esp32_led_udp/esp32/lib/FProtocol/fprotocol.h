@@ -124,7 +124,7 @@ void fprotocol_delete(fprotocol_handler *handler);
 uint16_t fprotocol_write(fprotocol_handler *handler, uint16_t node, uint8_t type, uint16_t index, void *data, uint16_t size,const StructDescriptor* desc);
 // void fprotocol_write_index(fprotocol_handler *handler, uint16_t index, uint8_t *data, uint16_t size);
 uint16_t checksum16(const uint8_t *data, size_t length);
-int8_t fprotocol_heart_ping(fprotocol_handler *handler);
+int8_t fprotocol_heart_ping(fprotocol_handler *handler, uint16_t target_node);
 int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*callback)(uint16_t node));
 size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDescriptor *desc);
 size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDescriptor *desc);
