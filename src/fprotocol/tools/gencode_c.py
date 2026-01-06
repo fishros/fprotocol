@@ -260,14 +260,14 @@ def generate_c_code(input_file, output_directory, code_type='c'):
         callback_flag = callback_flag[0] if callback_flag else '0'
         if callback_flag == '1':
             h_file_content += (
-                f"int16_t callback_{var_name}(uint16_t type, uint32_t from, uint16_t error_code);\n"
+                f"int16_t callback_{var_name}(uint16_t type, uint8_t from, uint16_t error_code);\n"
             )
 
     for row in data_list:
         index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         h_file_content += (
-            f"void write_{var_name}(fprotocol_handler *handler,uint16_t node,uint8_t response);\n"
-            f"void read_{var_name}(fprotocol_handler *handler,uint16_t node);\n"
+            f"void write_{var_name}(fprotocol_handler *handler,uint8_t node,uint8_t response);\n"
+            f"void read_{var_name}(fprotocol_handler *handler,uint8_t node);\n"
         )
 
 
@@ -333,10 +333,10 @@ def generate_c_code(input_file, output_directory, code_type='c'):
         index, data_type, var_name, callback_flag = row[0], row[1], row[2], row[3]
         struct_desc  = "NULL" if index2struct_desc[index] == 'NULL' else f"{index2struct_desc[index]}" 
         c_file_content += (
-            f"""void write_{var_name}(fprotocol_handler *handler,uint16_t node,uint8_t response)\n{{
+            f"""void write_{var_name}(fprotocol_handler *handler,uint8_t node,uint8_t response)\n{{
     fprotocol_write(handler, node, response ? SERVICE_REQUEST_WRITE : TRANSPORT_DATA, {index}, &{var_name}, sizeof({var_name}),{struct_desc});\n}}\n""")
         c_file_content += (
-            f"""void read_{var_name}(fprotocol_handler *handler,uint16_t node)\n{{
+            f"""void read_{var_name}(fprotocol_handler *handler,uint8_t node)\n{{
     fprotocol_write(handler, node, SERVICE_REQUEST_READ, {index}, &{var_name}, 0,{struct_desc});\n}}\n""")
 
     c_file_content += f"fprotocol_get_index_info_t {file_name.lower()}_index_info = {file_name.lower()}_fprotocol_get_index_info;"

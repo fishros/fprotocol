@@ -21,11 +21,11 @@ class RingBuffer;
 class Frame;
 
 // Type definitions
-using CallbackFunction = std::function<int16_t(uint16_t type, uint32_t from, uint16_t error_code)>;
+using CallbackFunction = std::function<int16_t(uint16_t type, uint8_t from, uint16_t error_code)>;
 using ReadFunction = std::function<int32_t(int16_t, uint8_t*, int32_t)>;
 using WriteFunction = std::function<int32_t(int16_t, uint8_t*, int32_t)>;
 using GetIndexInfoFunction = std::function<class ProtocolData*(uint16_t index)>;
-using HeartPingCallback = std::function<int8_t(uint16_t node)>;
+using HeartPingCallback = std::function<int8_t(uint8_t node)>;
 
 // Enums
 enum class FieldType : uint8_t {
@@ -73,7 +73,8 @@ struct StructDescriptor {
 
 #pragma pack(push, 1)
 struct ProtocolHeader {
-    uint16_t node;
+    uint8_t from;
+    uint8_t to;
     uint8_t type;
     uint16_t index;
     uint16_t data_size;
@@ -132,7 +133,7 @@ public:
     const ProtocolHeader& getHeader() const { return header_; }
     uint16_t getDataSize() const { return data_size_; }
     uint16_t getRecvSize() const { return recv_size_; }
-    int16_t getFrom() const { return from_; }
+    uint8_t getFrom() const { return from_; }
     uint16_t getErrorCode() const { return error_code_; }
     ProtocolData* getProtocolData() const { return protocol_data_; }
     uint8_t* getData() const { return data_.get(); }
@@ -142,7 +143,7 @@ public:
     void setDataSize(uint16_t size) { data_size_ = size; }
     void setRecvSize(uint16_t size) { recv_size_ = size; }
     void addRecvSize(uint16_t size) { recv_size_ += size; }
-    void setFrom(int16_t from) { from_ = from; }
+    void setFrom(uint8_t from) { from_ = from; }
     void setErrorCode(uint16_t code) { error_code_ = code; }
     void setProtocolData(ProtocolData* data) { protocol_data_ = data; }
 
@@ -150,7 +151,7 @@ private:
     ProtocolHeader header_;
     uint16_t data_size_;
     uint16_t recv_size_;
-    int16_t from_;
+    uint8_t from_;
     uint16_t error_code_;
     ProtocolData* protocol_data_;
     std::unique_ptr<uint8_t[]> data_;
@@ -162,20 +163,20 @@ public:
     ~Handler() = default;
     
     // Configuration
-    void setSelfNode(uint16_t node, GetIndexInfoFunction get_index_info);
-    void addOtherNode(uint16_t node, GetIndexInfoFunction get_index_info);
+    void setSelfNode(uint8_t node, GetIndexInfoFunction get_index_info);
+    void addOtherNode(uint8_t node, GetIndexInfoFunction get_index_info);
     void setHeartPingCallback(HeartPingCallback callback);
     
     // Main operations
     void tick();
     void readPut(const uint8_t* buf, uint32_t size);
-    uint16_t write(uint16_t node, ProtocolType type, uint16_t index, 
-                   const void* data, uint16_t size, 
+    uint16_t write(uint8_t to, ProtocolType type, uint16_t index,
+                   const void* data, uint16_t size,
                    std::shared_ptr<StructDescriptor> desc = nullptr);
     
     // Utility functions
     int8_t heartPing();
-    ProtocolData* getOtherNodeData(uint16_t node, uint16_t index);
+    ProtocolData* getOtherNodeData(uint8_t node, uint16_t index);
     
     // Static utility functions
     static uint16_t checksum16(const uint8_t* data, size_t length);
@@ -187,7 +188,7 @@ public:
 private:
     void processRequest();
     
-    uint16_t self_node_id_;
+    uint8_t self_node_id_;
     GetIndexInfoFunction get_node_info_;
     ReadFunction read_func_;
     WriteFunction write_func_;
@@ -196,7 +197,7 @@ private:
     std::unique_ptr<RingBuffer> rx_buffer_;
     
     uint8_t other_node_count_;
-    std::vector<uint16_t> other_node_table_;
+    std::vector<uint8_t> other_node_table_;
     std::vector<GetIndexInfoFunction> other_node_info_table_;
     
     HeartPingCallback heart_ping_callback_;

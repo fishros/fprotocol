@@ -239,8 +239,9 @@ class CircularBuffer:
         self.buffer = [None] * self.csize
 
 class FProtocolHeader:
-    def __init__(self, node=0, type=0, index=0, data_size=0):
-        self.node = node
+    def __init__(self, from_node=0, to=0, type=0, index=0, data_size=0):
+        self.from_node = from_node
+        self.to = to
         self.type = type
         self.index = index
         self.data_size = data_size
@@ -249,16 +250,17 @@ class FProtocolHeader:
     def from_bytes(cls, data):
         if len(data) != 7:
             raise ValueError("Invalid data length for FProtocolHeader")
-        node = data[0] | (data[1] << 8)
+        from_node = data[0]
+        to = data[1]
         type = data[2]
         index = data[3] | (data[4] << 8)
         data_size = data[5] | (data[6] << 8)
-        return cls(node, type, index, data_size)
+        return cls(from_node, to, type, index, data_size)
 
     def to_bytes(self):
         return [
-            self.node & 0xFF,
-            (self.node >> 8) & 0xFF,
+            self.from_node & 0xFF,
+            self.to & 0xFF,
             self.type,
             self.index & 0xFF,
             (self.index >> 8) & 0xFF,
@@ -267,7 +269,7 @@ class FProtocolHeader:
         ]
 
     def __str__(self):
-        return f"FProtocolHeader(node={self.node}, type={self.type}, index={self.index}, data_size={self.data_size})"
+        return f"FProtocolHeader(from={self.from_node}, to={self.to}, type={self.type}, index={self.index}, data_size={self.data_size})"
 
 
 class FProtocolType():
@@ -354,13 +356,13 @@ class FProtocol:
             header = self.parse_header(self.frame['data'][4:11])
             self.frame['header']  = header
             logger.debug(f"header={header}")
-            if header.node == self.self_node_id:
-                logger.debug(f"Recv data from self node {header.node}")
-            elif header.node in self.other_nodes.keys():
+            if header.to == self.self_node_id:
+                logger.debug(f"Recv data for self node {header.to}")
+            elif header.from_node in self.other_nodes.keys():
                 if header.type == FProtocolType.HEART_PING:
                     self.frame['data_size'] = 0
                     self.frame['fdata'] = None
-                    logger.debug(f"Recv data from node {self.frame['header'].node} data_size={self.frame['header'].data_size}")
+                    logger.debug(f"Recv data from node {self.frame['header'].from_node} data_size={self.frame['header'].data_size}")
                 else:
                     # fdata = self.slave_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
                     # self.frame['fdata'] = fdata
@@ -374,7 +376,7 @@ class FProtocol:
                         self.frame['data_size'] = self.frame['header'].data_size 
                     else:
                         self.frame['recv_size'] = 0 # 重新接收
-                # print(self.frame['recv_size'],self.frame['data_size'])
+            # print(self.frame['recv_size'],self.frame['data_size'])
             else:
                 self.frame['recv_size'] = 0
                 
@@ -411,29 +413,29 @@ class FProtocol:
         fdata = None
         
         # 处理心跳
-        if header.type == FProtocolType.HEART_PING and header.node in self.other_nodes.keys():
+        if header.type == FProtocolType.HEART_PING and header.from_node in self.other_nodes.keys():
             # 发送心跳响应
             if self.heartbeat_callback:
-                self.heartbeat_callback(header.type, header.node, 0)
-            self.fprotocol_write(header.node, FProtocolType.HEART_PONG, 0, [])
-            print(f"[Heartbeat] 收到来自节点 {header.node} 的心跳，已回复")
-        
+                self.heartbeat_callback(header.type, header.from_node, 0)
+            self.fprotocol_write(header.from_node, FProtocolType.HEART_PONG, 0, [])
+            print(f"[Heartbeat] 收到来自节点 {header.from_node} 的心跳，已回复")
+
         # 处理其他类型的消息
-        elif header.node in self.other_nodes.keys():
+        elif header.from_node in self.other_nodes.keys():
             if header.type == FProtocolType.SERVICE_RESPONSE_READ or header.type == FProtocolType.TRANSPORT_DATA:
-                fdata = self.other_nodes[self.frame['header'].node].get_index_data(self.frame['header'].index)
+                fdata = self.other_nodes[self.frame['header'].from_node].get_index_data(self.frame['header'].index)
                 fdata.parse(bytes(frame['data'][11:]))
 
             if fdata and fdata.callback:
                 fdata.callback(header.type, fdata, frame['error_code'])
 
 
-    def fprotocol_write(self, node, type, index, data, data_size=0):
+    def fprotocol_write(self, to, type, index, data, data_size=0):
         frame = []
         frame.extend(FProtocol.FRAME_HEAD)
         frame.extend([
-            node & 0xFF,
-            (node >> 8) & 0xFF,
+            self.self_node_id & 0xFF,
+            to & 0xFF,
             type,
             index & 0xFF,
             (index >> 8) & 0xFF,

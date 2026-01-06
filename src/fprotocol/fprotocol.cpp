@@ -93,12 +93,12 @@ Handler::Handler(ReadFunction read_func, WriteFunction write_func)
     other_node_info_table_.reserve(MAX_NODE);
 }
 
-void Handler::setSelfNode(uint16_t node, GetIndexInfoFunction get_index_info) {
+void Handler::setSelfNode(uint8_t node, GetIndexInfoFunction get_index_info) {
     self_node_id_ = node;
     get_node_info_ = get_index_info;
 }
 
-void Handler::addOtherNode(uint16_t node, GetIndexInfoFunction get_index_info) {
+void Handler::addOtherNode(uint8_t node, GetIndexInfoFunction get_index_info) {
     if (other_node_count_ >= MAX_NODE) {
         return;
     }
@@ -107,7 +107,7 @@ void Handler::addOtherNode(uint16_t node, GetIndexInfoFunction get_index_info) {
     other_node_count_++;
 }
 
-ProtocolData* Handler::getOtherNodeData(uint16_t node, uint16_t index) {
+ProtocolData* Handler::getOtherNodeData(uint8_t node, uint16_t index) {
     if (other_node_count_ == 0) {
         return nullptr;
     }
@@ -129,7 +129,7 @@ void Handler::readPut(const uint8_t* buf, uint32_t size) {
 
 void Handler::tick() {
     static uint8_t data[256];
-    static uint16_t from = 0;
+    static uint8_t from = 0;
     uint8_t rdata;
     
     if (read_func_) {
@@ -167,26 +167,28 @@ void Handler::tick() {
         }
     }
 
-    if (frame_->getRecvSize() >= 4 && frame_->getRecvSize() < 11) {
+    const uint16_t frame_header_size = sizeof(FRAME_HEAD) + sizeof(ProtocolHeader);
+
+    if (frame_->getRecvSize() >= 4 && frame_->getRecvSize() < frame_header_size) {
         uint32_t read_size = rx_buffer_->get(frame_->getData() + sizeof(FRAME_HEAD), sizeof(ProtocolHeader));
         frame_->addRecvSize(read_size);
-        
-        if (frame_->getRecvSize() != 11) {
+
+        if (frame_->getRecvSize() != frame_header_size) {
             return;
         } else {
-            frame_->setFrom(from);
             ProtocolHeader header;
             std::memcpy(&header, frame_->getData() + sizeof(FRAME_HEAD), sizeof(ProtocolHeader));
             frame_->setHeader(header);
+            frame_->setFrom(header.from);
 
 #ifdef DEBUG
-            std::printf("Header Info - Node: %02x, Type: %02x, Index: %d, DSize: %d \n",
-                       header.node, header.type, header.index, header.data_size);
+            std::printf("Header Info - From: %02x, To: %02x, Type: %02x, Index: %d, DSize: %d \n",
+                       header.from, header.to, header.type, header.index, header.data_size);
             std::printf("%d self_node_id: %02x\n", __LINE__, self_node_id_);
 #endif
 
             // Check if node ID is self
-            if (header.node == self_node_id_) {
+            if (header.to == self_node_id_) {
                 switch (static_cast<ProtocolType>(header.type)) {
                 case ProtocolType::HEART_PONG:
                     frame_->setDataSize(0);
@@ -216,8 +218,8 @@ void Handler::tick() {
                 }
             }
             // Check if message from other nodes
-            else if (getOtherNodeData(header.node, header.index) != nullptr) {
-                frame_->setProtocolData(getOtherNodeData(header.node, header.index));
+            else if (getOtherNodeData(header.from, header.index) != nullptr) {
+                frame_->setProtocolData(getOtherNodeData(header.from, header.index));
                 switch (static_cast<ProtocolType>(header.type)) {
                 case ProtocolType::SERVICE_RESPONSE_ERROR:
                     frame_->setDataSize(header.data_size);
@@ -244,19 +246,19 @@ void Handler::tick() {
         }
     }
 
-    if (frame_->getRecvSize() >= 11 && frame_->getRecvSize() < (11 + frame_->getDataSize())) {
+    if (frame_->getRecvSize() >= frame_header_size && frame_->getRecvSize() < (frame_header_size + frame_->getDataSize())) {
         uint32_t read_size = rx_buffer_->get(frame_->getData() + frame_->getRecvSize(), frame_->getDataSize());
         frame_->addRecvSize(read_size);
     }
 
-    if (frame_->getRecvSize() >= 11 + frame_->getDataSize()) {
+    if (frame_->getRecvSize() >= frame_header_size + frame_->getDataSize()) {
         uint32_t read_size = rx_buffer_->get(frame_->getData() + frame_->getRecvSize(), 2);
         frame_->addRecvSize(read_size);
-        
-        if (frame_->getRecvSize() == (13 + frame_->getDataSize())) {
-            uint16_t calculated_checksum = checksum16(frame_->getData(), 11 + frame_->getDataSize());
-            uint16_t received_checksum = (frame_->getData()[11 + frame_->getDataSize()] << 8) | 
-                                       frame_->getData()[12 + frame_->getDataSize()];
+
+        if (frame_->getRecvSize() == (frame_header_size + frame_->getDataSize() + 2)) {
+            uint16_t calculated_checksum = checksum16(frame_->getData(), frame_header_size + frame_->getDataSize());
+            uint16_t received_checksum = (frame_->getData()[frame_header_size + frame_->getDataSize()] << 8) |
+                                       frame_->getData()[frame_header_size + frame_->getDataSize() + 1];
             if (calculated_checksum == received_checksum) {
                 processRequest();
             }
@@ -275,25 +277,26 @@ void Handler::processRequest() {
     std::memcpy(send_buff, FRAME_HEAD, 4);
     
     const auto& header = frame_->getHeader();
-    
+    const uint16_t frame_header_size = sizeof(FRAME_HEAD) + sizeof(ProtocolHeader);
+
     // Slave node
-    if (header.node == self_node_id_) {
+    if (header.to == self_node_id_) {
 #ifdef DEBUG
         std::printf("Type: %02x\n", header.type);
-        std::printf("frame->header.node: %02x frame.protocol_data: %p\n", header.node, frame_->getProtocolData());
+        std::printf("frame->header.from: %02x frame.protocol_data: %p\n", header.from, frame_->getProtocolData());
 #endif
         if (static_cast<ProtocolType>(header.type) == ProtocolType::HEART_PONG) {
             if (heart_ping_callback_) {
-                heart_ping_callback_(header.node);
+                heart_ping_callback_(header.from);
             }
             return;
         }
         
         // Need to write data
-        if (static_cast<ProtocolType>(header.type) == ProtocolType::SERVICE_REQUEST_WRITE || 
+        if (static_cast<ProtocolType>(header.type) == ProtocolType::SERVICE_REQUEST_WRITE ||
             static_cast<ProtocolType>(header.type) == ProtocolType::TRANSPORT_DATA) {
             if (frame_->getProtocolData() && frame_->getProtocolData()->getStructDescriptor()) {
-                unpackStruct(frame_->getData() + 11, frame_->getProtocolData()->getData(), 
+                unpackStruct(frame_->getData() + frame_header_size, frame_->getProtocolData()->getData(),
                            *frame_->getProtocolData()->getStructDescriptor());
             }
         }
@@ -306,16 +309,16 @@ void Handler::processRequest() {
         // Need to reply SERVICE_REQUEST_WRITE
         if (static_cast<ProtocolType>(header.type) == ProtocolType::SERVICE_REQUEST_WRITE) {
             if (ret == 0) {
-                write(header.node, ProtocolType::SERVICE_RESPONSE_WRITE, header.index, nullptr, 0);
+                write(header.from, ProtocolType::SERVICE_RESPONSE_WRITE, header.index, nullptr, 0);
             } else {
-                write(header.node, ProtocolType::SERVICE_RESPONSE_ERROR, header.index, &ret, 2);
+                write(header.from, ProtocolType::SERVICE_RESPONSE_ERROR, header.index, &ret, 2);
             }
         }
-        
+
         // Need to reply SERVICE_REQUEST_READ
         if (static_cast<ProtocolType>(header.type) == ProtocolType::SERVICE_REQUEST_READ) {
             if (frame_->getProtocolData()) {
-                write(header.node, ProtocolType::SERVICE_RESPONSE_READ, header.index, 
+                write(header.from, ProtocolType::SERVICE_RESPONSE_READ, header.index,
                      frame_->getProtocolData()->getData(), frame_->getProtocolData()->getDataSize(),
                      frame_->getProtocolData()->getStructDescriptor());
             }
@@ -323,9 +326,9 @@ void Handler::processRequest() {
     }
     else { // Master node
         // Need to write data
-        if (static_cast<ProtocolType>(header.type) == ProtocolType::SERVICE_RESPONSE_READ || 
+        if (static_cast<ProtocolType>(header.type) == ProtocolType::SERVICE_RESPONSE_READ ||
             static_cast<ProtocolType>(header.type) == ProtocolType::TRANSPORT_DATA) {
-            std::memcpy(frame_->getProtocolData()->getData(), frame_->getData() + 11, frame_->getDataSize());
+            std::memcpy(frame_->getProtocolData()->getData(), frame_->getData() + frame_header_size, frame_->getDataSize());
         }
         
         // Callback
@@ -416,28 +419,30 @@ size_t Handler::unpackStruct(const uint8_t* buffer, void* data, const StructDesc
     return offset;
 }
 
-uint16_t Handler::write(uint16_t node, ProtocolType type, uint16_t index, 
-                       const void* data, uint16_t size, 
+uint16_t Handler::write(uint8_t to, ProtocolType type, uint16_t index,
+                       const void* data, uint16_t size,
                        std::shared_ptr<StructDescriptor> desc) {
 #ifdef DEBUG
     std::printf("write size:%d\n", size);
 #endif
     static uint8_t send_buff[FPROTOCOL_FRAME_DATA_SIZE];
     std::memcpy(send_buff, FRAME_HEAD, 4);
-    
+
     ProtocolHeader header;
-    header.node = node;
+    const uint16_t frame_header_size = sizeof(FRAME_HEAD) + sizeof(ProtocolHeader);
+    header.from = self_node_id_;
+    header.to = to;
     header.type = static_cast<uint8_t>(type);
     header.index = index;
-    
+
     if (size && data) {
         if (desc) {
-            size = packStruct(send_buff + 11, data, *desc);
+            size = packStruct(send_buff + frame_header_size, data, *desc);
         } else {
-            std::memcpy(send_buff + 11, data, size);
+            std::memcpy(send_buff + frame_header_size, data, size);
         }
     }
-    
+
     header.data_size = size;
     std::memcpy(send_buff + 4, &header, sizeof(ProtocolHeader));
 
@@ -445,11 +450,11 @@ uint16_t Handler::write(uint16_t node, ProtocolType type, uint16_t index,
     std::printf("data_size: %02x\n", header.data_size);
 #endif
 
-    uint16_t checksum = checksum16(send_buff, 11 + size);
-    send_buff[11 + size] = checksum >> 8;
-    send_buff[11 + size + 1] = checksum & 0xFF;
-    
-    return write_func_(node, send_buff, 11 + size + 2);
+    uint16_t checksum = checksum16(send_buff, frame_header_size + size);
+    send_buff[frame_header_size + size] = checksum >> 8;
+    send_buff[frame_header_size + size + 1] = checksum & 0xFF;
+
+    return write_func_(to, send_buff, frame_header_size + size + 2);
 }
 
 int8_t Handler::heartPing() {

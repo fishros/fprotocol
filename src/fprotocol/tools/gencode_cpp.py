@@ -306,7 +306,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
                     h_file_content += f"    void set_{var_name}_callback(FProtocol::CallbackFunction callback) {{ {var_name}_callback_ = callback; }}\n"
                     h_file_content += f"    template<typename T>\n"
                     h_file_content += f"    void set_{var_name}_callback(T* obj, int16_t (T::*method)(uint16_t, uint32_t, uint16_t)) {{\n"
-                    h_file_content += f"        {var_name}_callback_ = [obj, method](uint16_t type, uint32_t from, uint16_t error_code) -> int16_t {{\n"
+                    h_file_content += f"        {var_name}_callback_ = [obj, method](uint16_t type, uint8_t from, uint16_t error_code) -> int16_t {{\n"
                     h_file_content += f"            return (obj->*method)(type, from, error_code);\n"
                     h_file_content += f"        }};\n"
                     h_file_content += f"    }}\n"
@@ -316,8 +316,8 @@ def generate_c_code(input_file, output_directory, code_type='c'):
         # 读写函数声明
         for row in data_list:
             index, data_type, var_name = row[0], row[1], row[2]
-            h_file_content += f"    void write_{var_name}(FProtocol::Handler* handler, uint16_t node, bool response = false);\n"
-            h_file_content += f"    void read_{var_name}(FProtocol::Handler* handler, uint16_t node);\n"
+            h_file_content += f"    void write_{var_name}(FProtocol::Handler* handler, uint8_t node, bool response = false);\n"
+            h_file_content += f"    void read_{var_name}(FProtocol::Handler* handler, uint8_t node);\n"
         
         h_file_content += f"\n    FProtocol::ProtocolData* getIndexInfo(uint16_t index);\n"
         h_file_content += f"    FProtocol::GetIndexInfoFunction getIndexInfoFunction();\n"
@@ -375,7 +375,7 @@ def generate_c_code(input_file, output_directory, code_type='c'):
             callback_flag = callback_flag[0] if callback_flag else '0'
             
             if callback_flag == '1':
-                callback_function = f"[this](uint16_t type, uint32_t from, uint16_t error_code) -> int16_t {{ return {var_name}_callback_ ? {var_name}_callback_(type, from, error_code) : 0; }}"
+                callback_function = f"[this](uint16_t type, uint8_t from, uint16_t error_code) -> int16_t {{ return {var_name}_callback_ ? {var_name}_callback_(type, from, error_code) : 0; }}"
             else:
                 callback_function = "nullptr"
             
@@ -401,14 +401,14 @@ def generate_c_code(input_file, output_directory, code_type='c'):
             index, data_type, var_name = row[0], row[1], row[2]
             struct_desc = f"{data_type}_desc"
             c_file_content += (
-                f"""void {file_name}Protocol::write_{var_name}(FProtocol::Handler* handler, uint16_t node, bool response) {{
-    handler->write(node, response ? FProtocol::ProtocolType::SERVICE_REQUEST_WRITE : FProtocol::ProtocolType::TRANSPORT_DATA, 
+                f"""void {file_name}Protocol::write_{var_name}(FProtocol::Handler* handler, uint8_t node, bool response) {{
+    handler->write(node, response ? FProtocol::ProtocolType::SERVICE_REQUEST_WRITE : FProtocol::ProtocolType::TRANSPORT_DATA,
                    {index}, &{var_name}_, sizeof({var_name}_), {struct_desc});
 }}
 
 """)
             c_file_content += (
-                f"""void {file_name}Protocol::read_{var_name}(FProtocol::Handler* handler, uint16_t node) {{
+                f"""void {file_name}Protocol::read_{var_name}(FProtocol::Handler* handler, uint8_t node) {{
     handler->write(node, FProtocol::ProtocolType::SERVICE_REQUEST_READ, {index}, nullptr, 0, {struct_desc});
 }}
 
