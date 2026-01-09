@@ -412,6 +412,25 @@ def generate_c_code(input_file, output_directory, code_type='c'):
         save_to_file(f"{output_directory}/{file_name}Proto.hpp", h_file_content)
         save_to_file(f"{output_directory}/{file_name}Proto.cpp", c_file_content)
     
+        # Generate UDP test main and CMakeLists.txt
+        callback_setup_lines = []
+        for row in data_list:
+            if len(row) >= 4 and row[3] and row[3][0] == '1':
+                var_name = row[2]
+                callback_setup_lines.append(
+                    (
+                        "        protocol_.set_{}_callback([](uint16_t type, uint8_t from, uint16_t error_code) -> int16_t {{\\n"
+                        "            std::printf(\\\"cb {}: type=0x%02X from=0x%02X err=0x%04X\\\\n\\\", type, from, error_code);\\n"
+                        "            return 0;\\n"
+                        "        }});\\n"
+                    ).format(var_name, var_name)
+                )
+        callback_setup = "".join(callback_setup_lines)
+        callback_setup = "".join(callback_setup_lines)
+        callback_setup = "".join(callback_setup_lines)
+
+
+
     # 拷贝fprotocol相关文件
     copy_success = copy_fprotocol_files(output_directory, code_type)
     
@@ -421,27 +440,21 @@ def generate_c_code(input_file, output_directory, code_type='c'):
         print(f"代码生成完成，但fprotocol源文件拷贝失败。请手动拷贝fprotocol.{'hpp' if is_cpp else 'h'}和fprotocol.{'cpp' if is_cpp else 'c'}文件到输出目录。")
 
 def main():
-    """命令行入口点"""
-    print(f"命令行参数: {sys.argv}")
-    
+    """CLI entry point."""
     if len(sys.argv) < 3 or len(sys.argv) > 4:
-        print("Usage: python gencode_cpp.py <input_file> <output_directory> [code_type]")
+        print('Usage: python gencode_cpp_udp.py <input_file> <output_directory> [code_type]')
         print("  code_type: 'c' for C code (default), 'cpp' for C++ code")
         sys.exit(1)
-    
+
     input_file = sys.argv[1]
     output_directory = sys.argv[2]
     code_type = sys.argv[3] if len(sys.argv) == 4 else 'c'
-    
-    print(f"参数解析: input_file={input_file}, output_directory={output_directory}, code_type={code_type}")
-    
+
     if code_type not in ['c', 'cpp']:
         print("Error: code_type must be 'c' or 'cpp'")
         sys.exit(1)
-    
+
     generate_c_code(input_file, output_directory, code_type)
 
-if __name__ == "__main__":
-    print("脚本开始执行")
+if __name__ == '__main__':
     main()
-    print("脚本执行完成")

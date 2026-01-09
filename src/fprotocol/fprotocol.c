@@ -119,7 +119,7 @@ void fprotocol_tick(fprotocol_handler *handler)
             printf("%d self_node_id: %02x\n", __LINE__, handler->self_node_id);
 #endif
             // 判断nodeid是否是自己的节点ID
-            if (frame->header.to == handler->self_node_id)
+            if (frame->header.to == handler->self_node_id || frame->header.to == BROADCAST_NODE_ID) // 只处理发给自己或广播
             {
                 switch (frame->header.type)
                 {
@@ -129,6 +129,7 @@ void fprotocol_tick(fprotocol_handler *handler)
                 case SERVICE_RESPONSE_ERROR:
                     frame->data_size = frame->header.data_size; // Error code
                     break;
+                case SERVICE_REQUEST_WRITE:
                 case SERVICE_REQUEST_READ:
                 case SERVICE_RESPONSE_READ:
                 case TRANSPORT_DATA:
@@ -144,34 +145,6 @@ void fprotocol_tick(fprotocol_handler *handler)
                     }
                     break;
                 default:
-                    frame->data_size = 0;
-                    frame->recv_size = 0;
-                    break;
-                }
-            }
-            // 判断是否是来自其他节点的消息/其他节点响应错误/其他节点请求写入/其他节点响应读取/其他节点传输数据
-            else if (fprotocol_get_other_node_data(handler, frame->header.from, frame->header.index) != NULL)
-            {
-                frame->fdata = fprotocol_get_other_node_data(handler, frame->header.from, frame->header.index);
-                switch (frame->header.type)
-                {
-                case SERVICE_RESPONSE_ERROR:
-                    frame->data_size = frame->header.data_size; // Error code
-                    break;
-                case SERVICE_REQUEST_WRITE:
-                    frame->data_size = frame->header.data_size;
-                    break;
-                // case SERVICE_REQUEST_WRITE:
-                // case SERVICE_REQUEST_READ:
-                case SERVICE_RESPONSE_READ:
-                case TRANSPORT_DATA:
-                    frame->data_size = frame->header.data_size;
-                    break;
-                case HEART_PONG:
-                    frame->data_size = 0;
-                    break;
-                default:
-                    // reset
                     frame->data_size = 0;
                     frame->recv_size = 0;
                     break;

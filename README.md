@@ -50,6 +50,9 @@ fprotocol_tool gencode example.fproto --type=c --out_dir=./output
 # 生成C++代码
 fprotocol_tool gencode example.fproto --type=cpp --out_dir=./output
 
+# C++ UDP
+fprotocol_tool gencode example.fproto --type=cpp_udp --out_dir=./output
+
 # 生成Python代码  
 fprotocol_tool gencode example.fproto --type=py --out_dir=./output
 
@@ -100,4 +103,6 @@ canframe_t,uint8_t,data,8
 ## 许可证
 
 商业需授权
+
+
 

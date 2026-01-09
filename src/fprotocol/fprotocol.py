@@ -356,7 +356,7 @@ class FProtocol:
             header = self.parse_header(self.frame['data'][4:11])
             self.frame['header']  = header
             logger.debug(f"header={header}")
-            if header.from_node in self.other_nodes.keys() and header.to == self.self_node_id:
+            if header.from_node in self.other_nodes.keys() and (header.to == self.self_node_id or header.to == 0xFF):
                 if header.type == FProtocolType.HEART_PING:
                     self.frame['data_size'] = 0
                     self.frame['fdata'] = None

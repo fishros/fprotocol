@@ -1,0 +1,8 @@
+# 数据结构定义部分
+#数据结构名称,包含类型，名称,数据长度
+data_t,uint8_t,status_charge,
+data_t,uint8_t,volatge,
+---
+# 地址 , 类型    ,  变量名,  ,是否回调
+0x0001,uint8_t,led,0
+0x02,data_t,data,1
