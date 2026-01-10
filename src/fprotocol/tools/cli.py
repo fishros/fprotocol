@@ -76,13 +76,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例用法:
-  fprotocol_tool gencode example.fproto --type=c --out_dir=./output
-  fprotocol_tool gencode example.fproto --type=cpp_c --out_dir=./output
-  fprotocol_tool gencode example.fproto --type=cpp --out_dir=./output
-  fprotocol_tool gencode example.fproto --type=py --out_dir=./output
-  fprotocol_tool gencode example.fproto --type=py_ros2_serial --out_dir=./output
-  fprotocol_tool gencode example.fproto --type=py_ros2_udp --out_dir=./output
-  fprotocol_tool gencode example.fproto --type=py --out_dir=.
+  fprotocol_tool gencode example.fproto --type=c --out_dir=./output # 生成C风格代码
+  fprotocol_tool gencode example.fproto --type=cpp --out_dir=./output # 生成C++风格代码
+  fprotocol_tool gencode example.fproto --type=cpp_c --out_dir=./output # 生成C++后缀的C风格代码
+  fprotocol_tool gencode example.fproto --type=cpp_udp --out_dir=./output # 生成C++风格代码并生成测试CMAKE及MAIN代码
+  fprotocol_tool gencode example.fproto --type=py --out_dir=./output # 生成Python代码
+  fprotocol_tool gencode example.fproto --type=py_ros2_serial --out_dir=./output # 生成Python版本的ROS2节点代码(串口通信)
+  fprotocol_tool gencode example.fproto --type=py_ros2_udp --out_dir=./output # 生成Python版本ROS2节点代码(UDP网络通信)
+  fprotocol_tool gencode example.fproto --type=py --out_dir=. # 生成Python代码在当前目录
         """
     )
     
