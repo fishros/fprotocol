@@ -131,10 +131,10 @@ private:
 };
 
 int main() {
-    const uint16_t listen_port = 8888;
+    const uint16_t listen_port = 8889;
     const char* remote_ip = nullptr;
     const uint16_t remote_port = 0;
-    const uint8_t self_node_id = 0x02;
+    const uint8_t self_node_id = 0x01;
     UdpApp app(listen_port, self_node_id, remote_ip, remote_port);
     if (!app.ok()) return 1;
     app.run_forever(200);

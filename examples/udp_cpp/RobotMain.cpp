@@ -62,15 +62,24 @@ private:
 
     bool init_udp(uint16_t listen_port) {
         udp_socket_ = socket(AF_INET, SOCK_DGRAM, 0);
-        if (udp_socket_ == kInvalidSocket) return false;
+        if (udp_socket_ == kInvalidSocket) {
+            std::perror("socket");
+            return false;
+        }
         int reuse = 1;
         setsockopt(udp_socket_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
         addr.sin_port = htons(listen_port);
-        if (bind(udp_socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) return false;
-        if (!set_nonblocking(udp_socket_)) return false;
+        if (bind(udp_socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+            std::perror("bind");
+            return false;
+        }
+        if (!set_nonblocking(udp_socket_)) {
+            std::perror("fcntl");
+            return false;
+        }
         return true;
     }
 
@@ -136,7 +145,10 @@ int main() {
     const uint16_t remote_port = 0;
     const uint8_t self_node_id = 0x02;
     UdpApp app(listen_port, self_node_id, remote_ip, remote_port);
-    if (!app.ok()) return 1;
+    if (!app.ok()) {
+        std::fprintf(stderr, "UdpApp init failed (port %u). Check above logs (socket/bind/fcntl).\n", listen_port);
+        return 1;
+    }
     app.run_forever(200);
     return 0;
 }

@@ -1,16 +1,8 @@
 #include "fprotocol.hpp"
 #include <algorithm>
 #include <iostream>
-#include <chrono>
 
 // #define DEBUG 1
-
-namespace {
-inline uint64_t nowMs() {
-    using namespace std::chrono;
-    return static_cast<uint64_t>(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
-}
-} // namespace
 
 namespace FProtocol {
 
@@ -204,10 +196,6 @@ void Handler::tick() {
                 case ProtocolType::HEART_PONG:
                     frame_->setDataSize(0);
                     break;
-                case ProtocolType::TIME_SYNC_REQ:
-                case ProtocolType::TIME_SYNC_RES:
-                    frame_->setDataSize(header.data_size);
-                    break;
                 case ProtocolType::SERVICE_RESPONSE_ERROR:
                     frame_->setDataSize(header.data_size);
                     break;
@@ -289,34 +277,6 @@ void Handler::processRequest() {
         if (static_cast<ProtocolType>(header.type) == ProtocolType::HEART_PONG) {
             if (heart_ping_callback_) {
                 heart_ping_callback_(header.from);
-            }
-            return;
-        }
-        if (static_cast<ProtocolType>(header.type) == ProtocolType::TIME_SYNC_REQ) {
-            if (header.data_size >= 8) {
-                uint64_t t0 = 0;
-                std::memcpy(&t0, frame_->getData() + frame_header_size, 8);
-                uint64_t t1 = nowMs();
-                uint8_t payload[16];
-                std::memcpy(payload, &t0, 8);
-                std::memcpy(payload + 8, &t1, 8);
-                write(header.from, ProtocolType::TIME_SYNC_RES, 0, payload, 16);
-            }
-            return;
-        }
-        if (static_cast<ProtocolType>(header.type) == ProtocolType::TIME_SYNC_RES) {
-            if (header.data_size >= 16) {
-                uint64_t t0 = 0;
-                uint64_t t1 = 0;
-                std::memcpy(&t0, frame_->getData() + frame_header_size, 8);
-                std::memcpy(&t1, frame_->getData() + frame_header_size + 8, 8);
-                uint64_t t2 = nowMs();
-                uint64_t rtt = t2 >= t0 ? (t2 - t0) : 0;
-                uint64_t corrected = t1 + (rtt / 2);
-                int64_t offset = static_cast<int64_t>(corrected) - static_cast<int64_t>(t2);
-                if (time_sync_callback_) {
-                    time_sync_callback_(header.from, corrected, offset, static_cast<uint64_t>(rtt));
-                }
             }
             return;
         }
@@ -490,19 +450,8 @@ int8_t Handler::heartPing(uint8_t target_node) {
     return write(target_node, ProtocolType::HEART_PING, 0, nullptr, 0) > 0;
 }
 
-int8_t Handler::timeSync(uint8_t target_node) {
-    uint64_t t0 = nowMs();
-    uint8_t payload[8];
-    std::memcpy(payload, &t0, 8);
-    return write(target_node, ProtocolType::TIME_SYNC_REQ, 0, payload, 8) > 0;
-}
-
 void Handler::setHeartPingCallback(HeartPingCallback callback) {
     heart_ping_callback_ = callback;
-}
-
-void Handler::setTimeSyncCallback(TimeSyncCallback callback) {
-    time_sync_callback_ = callback;
 }
 
 uint16_t Handler::checksum16(const uint8_t* data, size_t length) {
