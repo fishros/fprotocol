@@ -63,6 +63,8 @@ typedef enum
     TRANSPORT_DATA,
     HEART_PING, // 心跳-PING
     HEART_PONG, // 心跳-PONG
+    TIME_SYNC_REQ, // 时间同步请求
+    TIME_SYNC_RES, // 时间同步响应
     MAX,
 } fprotocol_type;
 
@@ -106,6 +108,8 @@ typedef struct
     uint8_t other_node_index_table[MAX_NODE]; // 其他节点索引表
     fprotocol_get_index_info_t fprotocol_get_index_info_table[MAX_NODE];
     int8_t (*heart_ping_callback)(uint8_t node);
+    // time_sync_callback: from节点ID, corrected_utc_ms(对端时间+半RTT), offset_ms=corrected_utc_ms-本地时刻, rtt_ms
+    int8_t (*time_sync_callback)(uint8_t from, uint64_t corrected_utc_ms, int64_t offset_ms, uint64_t rtt_ms);
 } fprotocol_handler;
 
 void fring_init(fring_buffer *buffer, uint32_t size);
@@ -128,6 +132,8 @@ uint16_t fprotocol_write(fprotocol_handler *handler, uint8_t to, uint8_t type, u
 uint16_t checksum16(const uint8_t *data, size_t length);
 int8_t fprotocol_heart_ping(fprotocol_handler *handler, uint8_t target_node);
 int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*callback)(uint8_t node));
+int8_t fprotocol_time_sync(fprotocol_handler *handler, uint8_t target_node);
+int8_t fprotocol_set_time_sync_callback(fprotocol_handler *handler, int8_t (*callback)(uint8_t from, uint64_t corrected_utc_ms, int64_t offset_ms, uint64_t rtt_ms));
 size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDescriptor *desc);
 size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDescriptor *desc);
 #endif // FPROTOCOL_H

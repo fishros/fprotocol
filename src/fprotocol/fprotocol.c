@@ -1,8 +1,36 @@
 #include "fprotocol.h"
-// #include <Arduino.h>
+#ifdef ARDUINO
+#include <Arduino.h>
+#endif
+#include <sys/time.h>
+#include <time.h>
 static uint8_t FRAME_HEAD[4] = {0x55, 0xAA, 0x55, 0xAA};
 
 // #define DEBUG 1
+
+static uint32_t fprotocol_now_ms()
+{
+#ifdef ARDUINO
+    return millis();
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+#endif
+}
+
+static uint64_t fprotocol_utc_ms()
+{
+#ifdef ARDUINO
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000ULL);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000ULL);
+#endif
+}
 
 void fprotocol_add_other_node(fprotocol_handler *handler, uint8_t node, fprotocol_get_index_info_t get_index_info)
 {
@@ -133,9 +161,11 @@ void fprotocol_tick(fprotocol_handler *handler)
                 case SERVICE_REQUEST_READ:
                 case SERVICE_RESPONSE_READ:
                 case TRANSPORT_DATA:
+                case TIME_SYNC_REQ:
+                case TIME_SYNC_RES:
                     frame->data_size = frame->header.data_size;
                     frame->fdata = (handler->fprotocol_get_node_info)(frame->header.index);
-                    if (frame->fdata == NULL) // 无此索引
+                    if (frame->fdata == NULL && frame->header.type < TIME_SYNC_REQ) // 无此索引且不是时间同步
                     {
 #ifdef DEBUG
                         printf("No this index\n");
@@ -208,7 +238,7 @@ void fprotocol_req_deal(fprotocol_handler *handler)
     memcpy(send_buff, FRAME_HEAD, 4);
     const uint16_t frame_header_size = sizeof(FRAME_HEAD) + sizeof(fprotocol_header);
     // 从站
-    if (frame->header.to == handler->self_node_id)
+    if (frame->header.to == handler->self_node_id || frame->header.to == BROADCAST_NODE_ID)
     {
 #ifdef DEBUG
         printf("Type: %02x\n", frame->header.type);
@@ -222,32 +252,68 @@ void fprotocol_req_deal(fprotocol_handler *handler)
             }
             return;
         }
-        // 需要写入数据的情况
-        if (frame->header.type == SERVICE_REQUEST_WRITE || frame->header.type == TRANSPORT_DATA)
+        if (frame->header.type == TIME_SYNC_REQ)
         {
-            fprotocol_unpack_struct(frame->data + frame_header_size, frame->fdata->data, frame->fdata->struct_desc); // 拷贝数据到指定节点数据体
-        }
-        // 回调
-        if (frame->fdata->callback != NULL)
-        {
-            ret = frame->fdata->callback(frame->header.type, frame->from, frame->error_code);
-        }
-        // 需要回复1 SERVICE_REQUEST_WRITE
-        if (frame->header.type == SERVICE_REQUEST_WRITE)
-        {
-            if (ret == 0)
+            uint64_t t0_ms = 0;
+            if (frame->data_size >= 8)
             {
-                fprotocol_write(handler, frame->header.from, SERVICE_RESPONSE_WRITE, frame->header.index, NULL, 0, NULL);
+                memcpy(&t0_ms, frame->data + frame_header_size, 8);
             }
-            else
+            uint64_t now_ms = fprotocol_utc_ms();
+            uint8_t payload[16];
+            memcpy(payload, &t0_ms, 8);
+            memcpy(payload + 8, &now_ms, 8);
+            fprotocol_write(handler, frame->header.from, TIME_SYNC_RES, 0, payload, 16, NULL);
+        }
+        else if (frame->header.type == TIME_SYNC_RES)
+        {
+            uint64_t t0_ms = 0, t1_ms = 0;
+            if (frame->data_size >= 8)
             {
-                fprotocol_write(handler, frame->header.from, SERVICE_RESPONSE_ERROR, frame->header.index, &ret, 2, NULL);
+                memcpy(&t0_ms, frame->data + frame_header_size, 8);
+            }
+            if (frame->data_size >= 16)
+            {
+                memcpy(&t1_ms, frame->data + frame_header_size + 8, 8);
+            }
+            uint64_t t2_ms = fprotocol_utc_ms();
+            uint64_t rtt = (t2_ms >= t0_ms) ? (t2_ms - t0_ms) : 0;
+            uint64_t corrected_ms = t1_ms + (rtt / 2); // 对端时间 + 半RTT
+            int64_t offset = (int64_t)corrected_ms - (int64_t)t2_ms;
+            if (handler->time_sync_callback)
+            {
+                handler->time_sync_callback(frame->header.from, corrected_ms, offset, rtt);
             }
         }
-        // 需要回复2 SERVICE_REQUEST_WRITE
-        if (frame->header.type == SERVICE_REQUEST_READ)
+        else
         {
-            fprotocol_write(handler, frame->header.from, SERVICE_RESPONSE_READ, frame->header.index, frame->fdata->data, frame->fdata->data_size, frame->fdata->struct_desc);
+            // 需要写入数据的情况
+            if (frame->header.type == SERVICE_REQUEST_WRITE || frame->header.type == TRANSPORT_DATA)
+            {
+                fprotocol_unpack_struct(frame->data + frame_header_size, frame->fdata->data, frame->fdata->struct_desc); // 拷贝数据到指定节点数据体
+            }
+            // 回调
+            if (frame->fdata && frame->fdata->callback != NULL)
+            {
+                ret = frame->fdata->callback(frame->header.type, frame->from, frame->error_code);
+            }
+            // 需要回复1 SERVICE_REQUEST_WRITE
+            if (frame->header.type == SERVICE_REQUEST_WRITE)
+            {
+                if (ret == 0)
+                {
+                    fprotocol_write(handler, frame->header.from, SERVICE_RESPONSE_WRITE, frame->header.index, NULL, 0, NULL);
+                }
+                else
+                {
+                    fprotocol_write(handler, frame->header.from, SERVICE_RESPONSE_ERROR, frame->header.index, &ret, 2, NULL);
+                }
+            }
+            // 需要回复2 SERVICE_REQUEST_WRITE
+            if (frame->header.type == SERVICE_REQUEST_READ)
+            {
+                fprotocol_write(handler, frame->header.from, SERVICE_RESPONSE_READ, frame->header.index, frame->fdata->data, frame->fdata->data_size, frame->fdata->struct_desc);
+            }
         }
     }
     else // 能到这里一定是主站了
@@ -411,6 +477,7 @@ fprotocol_handler *fprotocol_init(int32_t (*read)(int16_t, uint8_t *, int32_t), 
     handler->read = read;
     handler->write = write;
     handler->heart_ping_callback = NULL;
+    handler->time_sync_callback = NULL;
     fring_init(handler->rxbuff, RING_BUFFER_SIZE);
     return handler; // 返回指针
 }
@@ -434,6 +501,24 @@ int8_t fprotocol_set_heart_ping_callback(fprotocol_handler *handler, int8_t (*ca
     }
     handler->heart_ping_callback = callback;
     return 0; // Return success
+}
+
+int8_t fprotocol_time_sync(fprotocol_handler *handler, uint8_t target_node)
+{
+    uint64_t t0_ms = fprotocol_utc_ms();
+    uint8_t payload[8];
+    memcpy(payload, &t0_ms, 8);
+    return fprotocol_write(handler, target_node, TIME_SYNC_REQ, 0, payload, 8, NULL) > 0;
+}
+
+int8_t fprotocol_set_time_sync_callback(fprotocol_handler *handler, int8_t (*callback)(uint8_t from, uint64_t corrected_utc_ms, int64_t offset_ms, uint64_t rtt_ms))
+{
+    if (handler == NULL || callback == NULL)
+    {
+        return -1;
+    }
+    handler->time_sync_callback = callback;
+    return 0;
 }
 void fring_init(fring_buffer *buffer, uint32_t size)
 {

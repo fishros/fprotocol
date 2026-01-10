@@ -27,6 +27,7 @@ using ReadFunction = std::function<int32_t(int16_t, uint8_t*, int32_t)>;
 using WriteFunction = std::function<int32_t(int16_t, uint8_t*, int32_t)>;
 using GetIndexInfoFunction = std::function<class ProtocolData*(uint16_t index)>;
 using HeartPingCallback = std::function<int8_t(uint8_t node)>;
+using TimeSyncCallback = std::function<int8_t(uint8_t from, uint64_t corrected_utc_ms, int64_t offset_ms, uint64_t rtt_ms)>;
 
 // Enums
 enum class FieldType : uint8_t {
@@ -49,6 +50,8 @@ enum class ProtocolType : uint8_t {
     TRANSPORT_DATA,
     HEART_PING,
     HEART_PONG,
+    TIME_SYNC_REQ,
+    TIME_SYNC_RES,
     MAX
 };
 
@@ -172,6 +175,7 @@ public:
     void setSelfNode(uint8_t node, GetIndexInfoFunction get_index_info);
     void addOtherNode(uint8_t node, GetIndexInfoFunction get_index_info);
     void setHeartPingCallback(HeartPingCallback callback);
+    void setTimeSyncCallback(TimeSyncCallback callback);
     
     // Main operations
     void tick();
@@ -182,6 +186,7 @@ public:
     
     // Utility functions
     int8_t heartPing(uint8_t target_node);
+    int8_t timeSync(uint8_t target_node);
     ProtocolData* getOtherNodeData(uint8_t node, uint16_t index);
     
     // Static utility functions
@@ -207,6 +212,7 @@ private:
     std::vector<GetIndexInfoFunction> other_node_info_table_;
     
     HeartPingCallback heart_ping_callback_;
+    TimeSyncCallback time_sync_callback_;
     
     static const uint8_t FRAME_HEAD[4];
 };

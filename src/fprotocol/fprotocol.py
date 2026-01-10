@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 
 import struct
+import time
 
 class DynamicStruct:
     def __init__(self, field_defs):
@@ -281,7 +282,9 @@ class FProtocolType():
     TRANSPORT_DATA = 0x06
     HEART_PING = 0x07
     HEART_PONG = 0x08
-    MAX = 0x08
+    TIME_SYNC_REQ = 0x09
+    TIME_SYNC_RES = 0x0A
+    MAX = 0x0A
     
 class FProtocol:
     FRAME_HEAD = [0x55,0xaa,0x55,0xaa]
@@ -303,6 +306,8 @@ class FProtocol:
         }
         # 心跳回调函数
         self.heartbeat_callback = None
+        # 时间同步回调函数
+        self.time_sync_callback = None
     
     def add_other_node(self, node_id, node_proto):
         """添加其他节点"""
@@ -316,12 +321,25 @@ class FProtocol:
     def set_heartbeat_callback(self, callback):
         """设置心跳回调函数"""
         self.heartbeat_callback = callback
+
+    def set_time_sync_callback(self, callback):
+        """设置时间同步回调函数"""
+        self.time_sync_callback = callback
     
     def send_heartbeat(self, target_node=None):
         """发送心跳包，默认使用自身节点ID"""
         if target_node is None:
             target_node = self.self_node_id
         return self.fprotocol_write(target_node, FProtocolType.HEART_PING, 0, [])
+    
+    def send_time_sync(self, target_node=None):
+        """发送时间同步请求（UTC ms, uint64），返回本地发送时刻(ms)"""
+        if target_node is None:
+            target_node = self.self_node_id
+        t0_ms = int(time.time() * 1000)
+        payload = t0_ms.to_bytes(8, "little")
+        self.fprotocol_write(target_node, FProtocolType.TIME_SYNC_REQ, 0, payload, len(payload))
+        return t0_ms
 
     def tick(self):
         if self.read_callback:
@@ -369,9 +387,9 @@ class FProtocol:
                     elif header.type == FProtocolType.SERVICE_REQUEST_WRITE:
                         self.frame['data_size'] = self.frame['header'].data_size # 0
                     elif header.type == FProtocolType.SERVICE_RESPONSE_READ:
-                        self.frame['data_size'] = self.frame['header'].data_size 
-                    elif header.type == FProtocolType.TRANSPORT_DATA:
-                        self.frame['data_size'] = self.frame['header'].data_size 
+                        self.frame['data_size'] = self.frame['header'].data_size
+                    elif header.type == FProtocolType.TRANSPORT_DATA or header.type in (FProtocolType.TIME_SYNC_REQ, FProtocolType.TIME_SYNC_RES):
+                        self.frame['data_size'] = self.frame['header'].data_size
                     else:
                         self.frame['recv_size'] = 0 # 重新接收
             # print(self.frame['recv_size'],self.frame['data_size'])
@@ -417,6 +435,29 @@ class FProtocol:
                 self.heartbeat_callback(header.type, header.from_node, 0)
             self.fprotocol_write(header.from_node, FProtocolType.HEART_PONG, 0, [])
             print(f"[Heartbeat] 收到来自节点 {header.from_node} 的心跳，已回复")
+
+        # 时间同步：对端请求，带回本地UTC时间戳（ms, uint64）
+        elif header.type == FProtocolType.TIME_SYNC_REQ and header.from_node in self.other_nodes.keys():
+            payload = bytes(frame['data'][11:11 + header.data_size])
+            if len(payload) >= 8:
+                t0_ms = int.from_bytes(payload[0:8], "little")
+            else:
+                t0_ms = 0
+            t1_ms = int(time.time() * 1000)
+            resp_payload = t0_ms.to_bytes(8, "little") + t1_ms.to_bytes(8, "little")
+            self.fprotocol_write(header.from_node, FProtocolType.TIME_SYNC_RES, 0, resp_payload, len(resp_payload))
+
+        # 时间同步：收到对端时间
+        elif header.type == FProtocolType.TIME_SYNC_RES and header.from_node in self.other_nodes.keys():
+            payload = bytes(frame['data'][11:11 + header.data_size])
+            t0_ms = int.from_bytes(payload[0:8], "little") if len(payload) >= 8 else 0
+            t1_ms = int.from_bytes(payload[8:16], "little") if len(payload) >= 16 else 0
+            t2_ms = int(time.time() * 1000)
+            if self.time_sync_callback:
+                rtt = t2_ms - t0_ms if t2_ms >= t0_ms else 0
+                corrected_ms = t1_ms + (rtt // 2)  # 对端时间 + 半RTT，作为本地应校准到的UTC ms
+                offset = corrected_ms - t2_ms
+                self.time_sync_callback(header.from_node, corrected_ms, offset, rtt)
 
         # 处理其他类型的消息
         elif header.from_node in self.other_nodes.keys():
