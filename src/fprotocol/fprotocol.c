@@ -8,6 +8,23 @@ static uint8_t FRAME_HEAD[4] = {0x55, 0xAA, 0x55, 0xAA};
 
 // #define DEBUG 1
 
+#ifdef DEBUG
+void debug_print_frame(const char *title, uint8_t *buffer, uint16_t size)
+{
+    int i;
+    printf("\n*************************start %s len(%d)**************************", title, size);
+    for (i = 1; i <= size; i++)
+    {
+        printf("0x%02X ", buffer[i - 1]);
+        if (i % 16 == 0)
+        {
+            printf("\n");
+        }
+    }
+    printf("\n*************************end %s*******************************\n", title);
+}
+#endif
+
 static uint32_t fprotocol_now_ms()
 {
 #ifdef ARDUINO
@@ -81,7 +98,7 @@ void fprotocol_tick(fprotocol_handler *handler)
     if (handler->read)
     {
         int16_t rsize = handler->read(from, data, 256);
-        if (rsize>0)
+        if (rsize > 0)
         {
             fring_put(handler->rxbuff, data, rsize);
 #ifdef DEBUG
@@ -354,22 +371,26 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
         }
         else
         {
-            // 单值字段
             switch (f.type)
             {
             case TYPE_UINT8:
+            case TYPE_INT8:
                 len = 1;
                 break;
             case TYPE_UINT16:
+            case TYPE_INT16:
                 len = 2;
                 break;
             case TYPE_UINT32:
+            case TYPE_INT32:
                 len = 4;
                 break;
             case TYPE_FLOAT:
                 len = 4;
                 break;
+            case TYPE_STRUCT:
             default:
+                len = 0;
                 break;
             }
         }
@@ -408,18 +429,23 @@ size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDe
             switch (f.type)
             {
             case TYPE_UINT8:
+            case TYPE_INT8:
                 len = 1;
                 break;
             case TYPE_UINT16:
+            case TYPE_INT16:
                 len = 2;
                 break;
             case TYPE_UINT32:
+            case TYPE_INT32:
                 len = 4;
                 break;
             case TYPE_FLOAT:
                 len = 4;
                 break;
+            case TYPE_STRUCT:
             default:
+                len = 0;
                 break;
             }
         }
@@ -452,12 +478,16 @@ uint16_t fprotocol_write(fprotocol_handler *handler, uint8_t to, uint8_t type, u
     }
     frame->header.data_size = size;
     memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
-#ifdef DEBUG
-    printf("data_size: %02x\n", frame->header.data_size);
-#endif
+
     uint16_t checksum = checksum16(send_buff, frame_header_size + size);
     send_buff[frame_header_size + size] = checksum >> 8;
     send_buff[frame_header_size + size + 1] = checksum & 0xFF;
+#ifdef DEBUG
+
+    printf("Sending Frame - From: %02x, To: %02x, Type: %02x, Index: %d, DSize: %d \n",
+           frame->header.from, frame->header.to, frame->header.type, frame->header.index, frame->header.data_size);
+    debug_print_frame("Send", send_buff, frame_header_size + size + 2);
+#endif
     return handler->write(to, send_buff, frame_header_size + size + 2);
 }
 

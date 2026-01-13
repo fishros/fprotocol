@@ -136,12 +136,12 @@ void Handler::readPut(const uint8_t* buf, uint32_t size) {
 }
 
 void Handler::tick() {
-    static uint8_t data[256];
+    static uint8_t data[FPROTOCOL_FRAME_DATA_SIZE];
     static uint8_t from = 0;
     uint8_t rdata;
     
     if (read_func_) {
-        int16_t rsize = read_func_(from, data, 256);
+        int16_t rsize = read_func_(from, data, static_cast<int32_t>(sizeof(data)));
         if (rsize > 0) {
             rx_buffer_->put(data, rsize);
 #ifdef DEBUG
@@ -385,18 +385,23 @@ size_t Handler::packStruct(uint8_t* buffer, const void* data, const StructDescri
             // Single value field
             switch (field.type) {
             case FieldType::UINT8:
+            case FieldType::INT8:
                 len = 1;
                 break;
             case FieldType::UINT16:
+            case FieldType::INT16:
                 len = 2;
                 break;
             case FieldType::UINT32:
+            case FieldType::INT32:
                 len = 4;
                 break;
             case FieldType::FLOAT:
                 len = 4;
                 break;
+            case FieldType::STRUCT:
             default:
+                len = 0;
                 break;
             }
         }
@@ -426,18 +431,23 @@ size_t Handler::unpackStruct(const uint8_t* buffer, void* data, const StructDesc
         } else {
             switch (field.type) {
             case FieldType::UINT8:
+            case FieldType::INT8:
                 len = 1;
                 break;
             case FieldType::UINT16:
+            case FieldType::INT16:
                 len = 2;
                 break;
             case FieldType::UINT32:
+            case FieldType::INT32:
                 len = 4;
                 break;
             case FieldType::FLOAT:
                 len = 4;
                 break;
+            case FieldType::STRUCT:
             default:
+                len = 0;
                 break;
             }
         }

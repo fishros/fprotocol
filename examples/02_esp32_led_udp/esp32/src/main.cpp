@@ -3,12 +3,12 @@
 #include <WiFiUdp.h>
 #include "RobotProto.h"
 
-#define LED_PIN 21 // IO21用于LED控制
+#define LED_PIN 13 // IO21用于LED控制
 
 // WiFi和UDP配置
 const char* ssid = "fishros";
 const char* password = "88888888";
-const char* udp_server_ip = "192.168.1.101";
+const char* udp_server_ip = "192.168.1.120";
 const uint16_t udp_server_port = 8888;
 WiFiUDP Udp;
 
@@ -31,6 +31,20 @@ const unsigned long heartbeat_interval = 1000; // 1秒间隔
 unsigned long last_led_time = 0;
 const unsigned long led_interval = 500; // 0.5秒间隔
 bool led_state = false;
+
+// 时间同步
+unsigned long last_time_sync = 0;
+const unsigned long time_sync_interval = 5000; // 5秒同步一次
+
+int8_t callback_time_sync(uint8_t from, uint64_t corrected_utc_ms, int64_t offset_ms, uint64_t rtt_ms) {
+  Serial.printf("[TimeSync] from %u corrected=%llu offset=%lldms rtt=%llums\n",
+                from,
+                (unsigned long long)corrected_utc_ms,
+                (long long)offset_ms,
+                (unsigned long long)rtt_ms);
+  // TODO: 可在此处设置本地RTC为 corrected_utc_ms
+  return 0;
+}
 
 // 连接WiFi函数
 void connectToWiFi() {
@@ -56,10 +70,18 @@ int32_t fprotocol_read_callback(int16_t from, uint8_t *buf, int32_t size) {
 
     int packetSize = Udp.parsePacket();
     if (packetSize > 0 && packetSize <= UDP_BUF_SIZE) {
-      udp_recv_len = Udp.read(udp_recv_buf, UDP_BUF_SIZE);
-      udp_buf_read_pos = 0;
-      Serial.print("[UDP] received packet, size: ");
-      Serial.println(udp_recv_len);
+    udp_recv_len = Udp.read(udp_recv_buf, UDP_BUF_SIZE);
+    udp_buf_read_pos = 0;
+    Serial.print("[UDP] received packet, size: ");
+    Serial.println(udp_recv_len);
+
+    Serial.print("[UDP HEX] ");
+    for (int i = 0; i < udp_recv_len; ++i) {
+        if (udp_recv_buf[i] < 0x10) Serial.print('0'); // 补零
+        Serial.print(udp_recv_buf[i], HEX);
+        Serial.print(' ');
+    }
+    Serial.println();
     }
   }
 
@@ -94,7 +116,7 @@ int32_t fprotocol_write_callback(int16_t to, uint8_t *buf, int32_t size) {
 }
 
 // LED控制回调函数
-int16_t callback_led(uint16_t type, uint32_t from, uint16_t error_code) {
+int16_t callback_led(uint16_t type, uint8_t from, uint16_t error_code) {
   if (led == 1) {
     digitalWrite(LED_PIN, HIGH);
   } else {
@@ -123,6 +145,7 @@ void setup() {
 
   // 设置自己的节点ID
   fprotocol_set_self_node(fprotocol_handler_ptr, 0x01, robot_index_info);
+  fprotocol_set_time_sync_callback(fprotocol_handler_ptr, callback_time_sync);
 
   Serial.println("FProtocol UDP Client Ready!");
 }
@@ -136,10 +159,19 @@ void loop() {
   // 发送心跳包
   unsigned long current_time = millis();
   if (current_time - last_heartbeat_time >= heartbeat_interval) {
-    fprotocol_heart_ping(fprotocol_handler_ptr, 0x01); // 发送心跳包
+    fprotocol_heart_ping(fprotocol_handler_ptr,0x02); // 发送心跳包
     last_heartbeat_time = current_time;
     Serial.println("[Heartbeat] Sent heartbeat to server");
+    data.status_charge += 1;
+    data.volatge += 1;
+    write_data(fprotocol_handler_ptr,0x02,0);
+  }
+
+  // 时间同步
+  if (current_time - last_time_sync >= time_sync_interval) {
+    fprotocol_time_sync(fprotocol_handler_ptr, 0x02);
+    last_time_sync = current_time;
   }
   
-  delay(10); 
+  delay(1); 
 }
