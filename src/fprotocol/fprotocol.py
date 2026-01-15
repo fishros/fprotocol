@@ -47,7 +47,11 @@ class DynamicStruct:
                     logger.debug(fmt)
                     logger.debug(data[index:index+field_size])
 
-                    self.values[field_name] = struct.unpack(dynamic_fmt, data[index:index+next_array_size])[0]
+                    unpacked = struct.unpack(dynamic_fmt, data[index:index+next_array_size])
+                    # For dynamic arrays (e.g. '133b'), struct.unpack returns a tuple of elements.
+                    # Keep the full tuple instead of only the first element.
+                    self.values[field_name] = unpacked
+                    logger.debug(f'Unpacked dynamic field {field_name}: {self.values[field_name]}')
                     index+= next_array_size
                     next_array_size = 0
                 else:
@@ -58,6 +62,7 @@ class DynamicStruct:
 
                     self.values[field_name] = struct.unpack(fmt, data[index:index+field_size])[0]
                     index+= field_size
+            logger.debug(f'Parsed field {field_name}: {self.values[field_name]}')
 
     def to_bytes(self) -> bytes:
         packed = bytearray()
