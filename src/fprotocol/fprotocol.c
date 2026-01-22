@@ -8,23 +8,6 @@ static uint8_t FRAME_HEAD[4] = {0x55, 0xAA, 0x55, 0xAA};
 
 // #define DEBUG 1
 
-#ifdef DEBUG
-void debug_print_frame(const char *title, uint8_t *buffer, uint16_t size)
-{
-    int i;
-    printf("\n*************************start %s len(%d)**************************", title, size);
-    for (i = 1; i <= size; i++)
-    {
-        printf("0x%02X ", buffer[i - 1]);
-        if (i % 16 == 0)
-        {
-            printf("\n");
-        }
-    }
-    printf("\n*************************end %s*******************************\n", title);
-}
-#endif
-
 static uint32_t fprotocol_now_ms()
 {
 #ifdef ARDUINO
@@ -85,7 +68,7 @@ void fprotocol_read_put(fprotocol_handler *handler, uint8_t *buf, uint32_t size)
 {
     fring_put(handler->rxbuff, buf, size);
 #ifdef DEBUG
-    printf("put data to ring_buffer_size: %d %s\n", size, buf);
+    // printf("put data to ring_buffer_size: %lu %s\n", size, buf);
 #endif
 }
 
@@ -102,12 +85,12 @@ void fprotocol_tick(fprotocol_handler *handler)
         {
             fring_put(handler->rxbuff, data, rsize);
 #ifdef DEBUG
-            printf("put data to ring_buffer_size: %d\n", rsize);
+            // printf("put data to ring_buffer_size: %d\n", rsize);
 #endif
         }
     }
 #ifdef DEBUG
-    printf("fring_size: %d frame->recv_size:%u\n", fring_size(handler->rxbuff), frame->recv_size);
+    // printf("fring_size: %ld frame->recv_size:%u\n",fring_size(handler->rxbuff), frame->recv_size);
 #endif
     if (frame->recv_size < 4)
     {
@@ -355,48 +338,80 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
     {
         FieldDescriptor f = desc->fields[i];
         const uint8_t *field_ptr = (const uint8_t *)data + f.offset;
-        size_t len = 0;
+        uint16_t len = 0;
 
         if (f.size_field >= 0)
         {
             // 不定长数组
             const FieldDescriptor *size_fd = &desc->fields[f.size_field];
             const uint8_t *size_ptr = (const uint8_t *)data + size_fd->offset;
-            len = *size_ptr; // 假设是 uint8_t 类型
-        }
-        else if (f.array_len > 0)
-        {
-            // 固定长度数组
-            len = f.array_len;
-        }
-        else
-        {
+            len = (*size_ptr) + ((*(size_ptr + 1)) << 8);
+             #ifdef DEBUG
+                printf("len: %d, %d, %d\n", len, (*size_ptr << 8), *(size_ptr + 1));
+            #endif
+            // 单值字段
             switch (f.type)
             {
             case TYPE_UINT8:
-            case TYPE_INT8:
+                break;
+            case TYPE_UINT16:
+                len *= 2; 
+                break;
+            case TYPE_UINT32:
+            case TYPE_FLOAT:
+                len  *= 4; 
+                break;
+            default:
+                break;
+            }
+        }
+        else if (f.array_len > 0)
+        {
+            // 固定长度数组，需要乘以元素大小
+            switch (f.type)
+            {
+            case TYPE_UINT8:
+                len = f.array_len * 1;
+                break;
+            case TYPE_UINT16:
+                len = f.array_len * 2;
+                break;
+            case TYPE_UINT32:
+            case TYPE_FLOAT:
+                len = f.array_len * 4;
+                break;
+            default:
+                len = f.array_len;
+                break;
+            }
+        }
+        else
+        {
+            // 单值字段
+            switch (f.type)
+            {
+            case TYPE_UINT8:
                 len = 1;
                 break;
             case TYPE_UINT16:
-            case TYPE_INT16:
                 len = 2;
                 break;
             case TYPE_UINT32:
-            case TYPE_INT32:
                 len = 4;
                 break;
             case TYPE_FLOAT:
                 len = 4;
                 break;
-            case TYPE_STRUCT:
             default:
-                len = 0;
                 break;
             }
         }
 
         memcpy(buffer + offset, field_ptr, len);
         offset += len;
+        #ifdef DEBUG
+            printf("offset: %d len: %d\n", offset, len);
+        #endif
     }
     return offset;
 }
@@ -419,33 +434,45 @@ size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDe
             const FieldDescriptor *size_fd = &desc->fields[f.size_field];
             const uint8_t *size_ptr = (const uint8_t *)data + size_fd->offset;
             len = *size_ptr;
+
         }
         else if (f.array_len > 0)
         {
-            len = f.array_len;
+            // 固定长度数组，需要乘以元素大小
+            switch (f.type)
+            {
+            case TYPE_UINT8:
+                len = f.array_len * 1;
+                break;
+            case TYPE_UINT16:
+                len = f.array_len * 2;
+                break;
+            case TYPE_UINT32:
+            case TYPE_FLOAT:
+                len = f.array_len * 4;
+                break;
+            default:
+                len = f.array_len;
+                break;
+            }
         }
         else
         {
             switch (f.type)
             {
             case TYPE_UINT8:
-            case TYPE_INT8:
                 len = 1;
                 break;
             case TYPE_UINT16:
-            case TYPE_INT16:
                 len = 2;
                 break;
             case TYPE_UINT32:
-            case TYPE_INT32:
                 len = 4;
                 break;
             case TYPE_FLOAT:
                 len = 4;
                 break;
-            case TYPE_STRUCT:
             default:
-                len = 0;
                 break;
             }
         }
@@ -472,22 +499,23 @@ uint16_t fprotocol_write(fprotocol_handler *handler, uint8_t to, uint8_t type, u
     if (size)
     {
         if (desc)
+        {
             size = fprotocol_pack_struct(send_buff + frame_header_size, data, desc);
+#ifdef DEBUG
+            printf("fprotocol_pack_struct size:%d\n", size);
+#endif
+        }
         else
             memcpy(send_buff + frame_header_size, data, size); // Data
     }
     frame->header.data_size = size;
     memcpy(send_buff + 4, &frame->header, sizeof(fprotocol_header));
-
+#ifdef DEBUG
+    printf("data_size: %02x\n", frame->header.data_size);
+#endif
     uint16_t checksum = checksum16(send_buff, frame_header_size + size);
     send_buff[frame_header_size + size] = checksum >> 8;
     send_buff[frame_header_size + size + 1] = checksum & 0xFF;
-#ifdef DEBUG
-
-    printf("Sending Frame - From: %02x, To: %02x, Type: %02x, Index: %d, DSize: %d \n",
-           frame->header.from, frame->header.to, frame->header.type, frame->header.index, frame->header.data_size);
-    debug_print_frame("Send", send_buff, frame_header_size + size + 2);
-#endif
     return handler->write(to, send_buff, frame_header_size + size + 2);
 }
 

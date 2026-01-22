@@ -41,18 +41,20 @@ class DynamicStruct:
                 if next_array_size:
                     fmt_without_num = fmt[-1]  # Get the format type (like 's', 'H', etc.)
                     dynamic_fmt = f"{next_array_size}{fmt_without_num}"
+                    fmt_signle_size = struct.calcsize(fmt_without_num)
 
+                    logger.debug(f'-----------------')
                     logger.debug(f'field_name {field_name}')
                     logger.debug(f'next_array_size {next_array_size}')
                     logger.debug(fmt)
                     logger.debug(data[index:index+field_size])
 
-                    unpacked = struct.unpack(dynamic_fmt, data[index:index+next_array_size])
+                    unpacked = struct.unpack(dynamic_fmt, data[index:index+next_array_size*fmt_signle_size])
                     # For dynamic arrays (e.g. '133b'), struct.unpack returns a tuple of elements.
                     # Keep the full tuple instead of only the first element.
                     self.values[field_name] = unpacked
                     logger.debug(f'Unpacked dynamic field {field_name}: {self.values[field_name]}')
-                    index+= next_array_size
+                    index+= next_array_size*fmt_signle_size
                     next_array_size = 0
                 else:
                     
@@ -408,7 +410,6 @@ class FProtocol:
             self.frame['data'].extend(additional_data)
             self.frame['recv_size'] = len(self.frame['data'])
             logger.debug(f"Recv data from node {self.frame['header'].from_node} data_size={self.frame['data_size']}")
-            # print()
         
         if self.frame['recv_size'] >= (11 + self.frame['data_size']):
             checksum_data = self.rxbuff.get(2) # checksum
@@ -421,6 +422,8 @@ class FProtocol:
                 if self.frame['header'].type == FProtocolType.SERVICE_RESPONSE_ERROR:
                     self.frame['error_code'] = self.frame['data'][11] << 8 | self.frame['data'][12]
                 self.process_frame(self.frame)  
+            else:
+                logger.warn(f"checksum error")
 
             self.frame['data'].clear()
             self.frame['recv_size'] = 0
