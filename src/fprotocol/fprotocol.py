@@ -86,7 +86,18 @@ class DynamicStruct:
                         if isinstance(val, str):
                             val = val.encode()
                         val = val.ljust(next_array_size, b'\x00')
-                    packed += struct.pack(dynamic_fmt, val)
+                        packed += struct.pack(dynamic_fmt, val)
+                    else:
+                        if isinstance(val, (bytes, bytearray)):
+                            if fmt_type == "b":
+                                signed_vals = [(b - 256) if b > 127 else b for b in val]
+                                packed += struct.pack(dynamic_fmt, *signed_vals)
+                            else:
+                                packed += struct.pack(dynamic_fmt, *val)
+                        elif isinstance(val, (list, tuple)):
+                            packed += struct.pack(dynamic_fmt, *val)
+                        else:
+                            packed += struct.pack(dynamic_fmt, val)
                     next_array_size = 0
                 else:
                     # 非变长字段，正常处理
