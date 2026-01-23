@@ -352,6 +352,7 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
             // 单值字段
             switch (f.type)
             {
+            case TYPE_INT8:
             case TYPE_UINT8:
                 break;
             case TYPE_INT16:
@@ -372,6 +373,7 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
             // 固定长度数组，需要乘以元素大小
             switch (f.type)
             {
+            case TYPE_INT8:
             case TYPE_UINT8:
                 len = f.array_len * 1;
                 break;
@@ -394,6 +396,7 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
             // 单值字段
             switch (f.type)
             {
+            case TYPE_INT8:
             case TYPE_UINT8:
                 len = 1;
                 break;
