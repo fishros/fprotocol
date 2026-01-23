@@ -354,9 +354,11 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
             {
             case TYPE_UINT8:
                 break;
+            case TYPE_INT16:
             case TYPE_UINT16:
                 len *= 2; 
                 break;
+            case TYPE_INT32:
             case TYPE_UINT32:
             case TYPE_FLOAT:
                 len  *= 4; 
@@ -374,9 +376,11 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
                 len = f.array_len * 1;
                 break;
             case TYPE_UINT16:
+            case TYPE_INT16:
                 len = f.array_len * 2;
                 break;
             case TYPE_UINT32:
+            case TYPE_INT32:
             case TYPE_FLOAT:
                 len = f.array_len * 4;
                 break;
@@ -393,9 +397,11 @@ size_t fprotocol_pack_struct(uint8_t *buffer, const void *data, const StructDesc
             case TYPE_UINT8:
                 len = 1;
                 break;
+            case TYPE_INT16:
             case TYPE_UINT16:
                 len = 2;
                 break;
+            case TYPE_INT32:
             case TYPE_UINT32:
                 len = 4;
                 break;
@@ -444,9 +450,11 @@ size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDe
             case TYPE_UINT8:
                 len = f.array_len * 1;
                 break;
+            case TYPE_INT16:
             case TYPE_UINT16:
                 len = f.array_len * 2;
                 break;
+            case TYPE_INT32:
             case TYPE_UINT32:
             case TYPE_FLOAT:
                 len = f.array_len * 4;
@@ -463,9 +471,11 @@ size_t fprotocol_unpack_struct(const uint8_t *buffer, void *data, const StructDe
             case TYPE_UINT8:
                 len = 1;
                 break;
+            case TYPE_INT16:
             case TYPE_UINT16:
                 len = 2;
                 break;
+            case TYPE_INT32:
             case TYPE_UINT32:
                 len = 4;
                 break;
