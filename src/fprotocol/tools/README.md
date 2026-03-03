@@ -85,6 +85,8 @@ MotorCmd,uint8_t,direction,
 4,float,battery_voltage,0
 ```
 
+基础类型支持：`uint8_t/16_t/32_t/64_t`、`int8_t/16_t/32_t/64_t`、`float`、`double`、`char`、`bool`。
+
 ## 生成的代码对比
 
 ### C代码风格

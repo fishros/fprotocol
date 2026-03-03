@@ -10,6 +10,30 @@ inline uint64_t nowMs() {
     using namespace std::chrono;
     return static_cast<uint64_t>(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
 }
+
+inline size_t fieldTypeSize(FProtocol::FieldType type) {
+    switch (type) {
+    case FProtocol::FieldType::UINT8:
+    case FProtocol::FieldType::INT8:
+    case FProtocol::FieldType::CHAR:
+    case FProtocol::FieldType::BOOL:
+        return 1;
+    case FProtocol::FieldType::UINT16:
+    case FProtocol::FieldType::INT16:
+        return 2;
+    case FProtocol::FieldType::UINT32:
+    case FProtocol::FieldType::INT32:
+    case FProtocol::FieldType::FLOAT:
+        return 4;
+    case FProtocol::FieldType::UINT64:
+    case FProtocol::FieldType::INT64:
+    case FProtocol::FieldType::DOUBLE:
+        return 8;
+    case FProtocol::FieldType::STRUCT:
+    default:
+        return 0;
+    }
+}
 } // namespace
 
 namespace FProtocol {
@@ -377,33 +401,15 @@ size_t Handler::packStruct(uint8_t* buffer, const void* data, const StructDescri
             // Variable length array
             const auto& size_field = desc.fields[field.size_field];
             const uint8_t* size_ptr = static_cast<const uint8_t*>(data) + size_field.offset;
-            len = *size_ptr;
+            len = static_cast<size_t>(size_ptr[0]) | (static_cast<size_t>(size_ptr[1]) << 8);
+            len *= fieldTypeSize(field.type);
         } else if (field.array_len > 0) {
             // Fixed length array
-            len = field.array_len;
+            size_t type_size = fieldTypeSize(field.type);
+            len = type_size > 0 ? (field.array_len * type_size) : field.array_len;
         } else {
             // Single value field
-            switch (field.type) {
-            case FieldType::UINT8:
-            case FieldType::INT8:
-                len = 1;
-                break;
-            case FieldType::UINT16:
-            case FieldType::INT16:
-                len = 2;
-                break;
-            case FieldType::UINT32:
-            case FieldType::INT32:
-                len = 4;
-                break;
-            case FieldType::FLOAT:
-                len = 4;
-                break;
-            case FieldType::STRUCT:
-            default:
-                len = 0;
-                break;
-            }
+            len = fieldTypeSize(field.type);
         }
 
         std::memcpy(buffer + offset, field_ptr, len);
@@ -425,31 +431,13 @@ size_t Handler::unpackStruct(const uint8_t* buffer, void* data, const StructDesc
             // Variable length array
             const auto& size_field = desc.fields[field.size_field];
             const uint8_t* size_ptr = static_cast<const uint8_t*>(data) + size_field.offset;
-            len = *size_ptr;
+            len = static_cast<size_t>(size_ptr[0]) | (static_cast<size_t>(size_ptr[1]) << 8);
+            len *= fieldTypeSize(field.type);
         } else if (field.array_len > 0) {
-            len = field.array_len;
+            size_t type_size = fieldTypeSize(field.type);
+            len = type_size > 0 ? (field.array_len * type_size) : field.array_len;
         } else {
-            switch (field.type) {
-            case FieldType::UINT8:
-            case FieldType::INT8:
-                len = 1;
-                break;
-            case FieldType::UINT16:
-            case FieldType::INT16:
-                len = 2;
-                break;
-            case FieldType::UINT32:
-            case FieldType::INT32:
-                len = 4;
-                break;
-            case FieldType::FLOAT:
-                len = 4;
-                break;
-            case FieldType::STRUCT:
-            default:
-                len = 0;
-                break;
-            }
+            len = fieldTypeSize(field.type);
         }
 
         std::memcpy(field_ptr, buffer + offset, len);

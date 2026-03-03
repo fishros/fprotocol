@@ -1,0 +1,10 @@
+# 数据结构定义部分
+#数据结构名称,包含类型，名称,数据长度
+float3d_t,float,x,
+float3d_t,float,y,
+float3d_t,float,z,
+nav_opt_t,char,data,512
+---
+# 地址 , 类型    ,  变量名,  ,是否回调
+0x0001,float3d_t,cmd_vel,1 # x,y 两个方向的速度，z是yaw原地旋转速度
+0x0002,nav_opt_t,nav_target,0 # 下位机上报应用层JSON字符串
